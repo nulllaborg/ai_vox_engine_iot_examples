@@ -1,4 +1,5 @@
 #include <Adafruit_NeoPixel.h>
+#include <ArduinoJson.h>
 #include <WiFi.h>
 #include <driver/spi_common.h>
 #include <esp_heap_caps.h>
@@ -71,31 +72,6 @@ auto g_audio_output_device = std::make_shared<ai_vox::I2sStdAudioOutputDevice>(k
 std::unique_ptr<Display> g_display;
 auto g_observer = std::make_shared<ai_vox::Observer>();
 
-struct RGBColor {
-  uint8_t r;
-  uint8_t g;
-  uint8_t b;
-  const char* color_name;
-};
-
-// Preset color library
-const RGBColor color_library[] = {{255, 0, 0, "红色"},
-                                  {0, 255, 0, "绿色"},
-                                  {0, 0, 255, "蓝色"},
-                                  {255, 255, 0, "黄色"},
-                                  {255, 0, 255, "紫色"},
-                                  {0, 255, 255, "青色"},
-                                  {255, 255, 255, "白色"},
-                                  {0, 0, 0, "黑色"},
-                                  {128, 128, 128, "灰色"},
-                                  {128, 0, 0, "深红色"},
-                                  {0, 128, 0, "深绿色"},
-                                  {0, 0, 128, "深蓝色"},
-                                  {255, 165, 0, "橙色"},
-                                  {255, 192, 203, "粉色"},
-                                  {240, 230, 140, " khaki色"},
-                                  {70, 130, 180, "钢蓝色"}};
-
 Adafruit_NeoPixel g_strip(kLedNum, kLedPin, NEO_GRB + NEO_KHZ800);
 
 void InitDisplay() {
@@ -165,6 +141,11 @@ void InitIot() {
           "亮度",                          // property description
           ai_vox::iot::ValueType::kNumber  // property type
       },
+      {
+          "LedNums",                       // property name
+          "灯的数量",                      // property description
+          ai_vox::iot::ValueType::kNumber  // property type
+      },
       // add more properties as needed
   });
 
@@ -228,6 +209,7 @@ void InitIot() {
 
   // 4.Initialize the WS2812B RGB LED ring entity with default values
   g_ws2812b_iot_entity->UpdateState("brightness", 128);
+  g_ws2812b_iot_entity->UpdateState("LedNums", kLedNum);
   // 初始化每个LED颜色
   for (uint32_t i = 1; i <= kLedNum; ++i) {
     std::string prop_name = "color" + std::to_string(i);
@@ -238,44 +220,39 @@ void InitIot() {
   ai_vox_engine.RegisterIotEntity(g_ws2812b_iot_entity);
 }
 
-float ColorDistance(uint8_t first_color_r,
-                    uint8_t first_color_g,
-                    uint8_t first_color_b,
-                    uint8_t second_color_r,
-                    uint8_t second_color_g,
-                    uint8_t second_color_b) {
-  int dr = first_color_r - second_color_r;
-  int dg = first_color_g - second_color_g;
-  int db = first_color_b - second_color_b;
-  return sqrt(dr * dr + dg * dg + db * db);
-}
-
-// Dynamically resolve color names
-std::string GetColorName(uint32_t color) {
-  uint8_t first_color_r = (color >> 16) & 0xFF;
-  uint8_t first_color_g = (color >> 8) & 0xFF;
-  uint8_t first_color_b = color & 0xFF;
-
-  float min_distance = 9999;
-  const char* closest_color = "未知颜色";
-
-  for (size_t i = 0; i < sizeof(color_library) / sizeof(color_library[0]); i++) {
-    const RGBColor& ref_color = color_library[i];
-    float distance = ColorDistance(first_color_r, first_color_g, first_color_b, ref_color.r, ref_color.g, ref_color.b);
-
-    if (distance < min_distance) {
-      min_distance = distance;
-      closest_color = ref_color.color_name;
-    }
-  }
-  return std::string(closest_color);
-}
-
 // ws2812b init funtion
 void Ws2812bInit() {
   g_strip.begin();
   g_strip.setBrightness(128);  // Set the default brightness to medium
   g_strip.show();              // Turn off all LEDs during initialization
+}
+
+std::string ConvertRGBToJsonString(const std::optional<int64_t>& red,
+                                   const std::optional<int64_t>& green,
+                                   const std::optional<int64_t>& blue) {
+  StaticJsonDocument<256> doc;
+
+  if (red.has_value()) {
+    doc["red"] = static_cast<uint8_t>(std::clamp(red.value(), 0LL, 255LL));
+  } else {
+    doc["red"] = nullptr;
+  }
+
+  if (green.has_value()) {
+    doc["green"] = static_cast<uint8_t>(std::clamp(green.value(), 0LL, 255LL));
+  } else {
+    doc["green"] = nullptr;
+  }
+
+  if (blue.has_value()) {
+    doc["blue"] = static_cast<uint8_t>(std::clamp(blue.value(), 0LL, 255LL));
+  } else {
+    doc["blue"] = nullptr;
+  }
+
+  std::string json_string;
+  serializeJson(doc, json_string);
+  return json_string;
 }
 
 // Implementation of brightness control function
@@ -464,159 +441,146 @@ void loop() {
 
       if (iot_message_event->name == "WS2812B") {
         if (iot_message_event->function == "SetIndexColor") {  // Specify the color of a certain light
-          int64_t index = 0;
-          int64_t red = 0;
-          int64_t green = 0;
-          int64_t blue = 0;
-          bool has_index = false;
-          bool has_red = false;
-          bool has_green = false;
-          bool has_blue = false;
+
+          std::optional<int64_t> index;
+          std::optional<int64_t> red;
+          std::optional<int64_t> green;
+          std::optional<int64_t> blue;
 
           if (const auto it = iot_message_event->parameters.find("index"); it != iot_message_event->parameters.end()) {
             if (std::get_if<int64_t>(&it->second)) {
               index = std::get<int64_t>(it->second);
-              has_index = true;
             }
           }
 
           if (const auto it = iot_message_event->parameters.find("red"); it != iot_message_event->parameters.end()) {
             if (std::get_if<int64_t>(&it->second)) {
               red = std::get<int64_t>(it->second);
-              has_red = true;
             }
           }
 
           if (const auto it = iot_message_event->parameters.find("green"); it != iot_message_event->parameters.end()) {
             if (std::get_if<int64_t>(&it->second)) {
               green = std::get<int64_t>(it->second);
-              has_green = true;
             }
           }
 
           if (const auto it = iot_message_event->parameters.find("blue"); it != iot_message_event->parameters.end()) {
             if (std::get_if<int64_t>(&it->second)) {
               blue = std::get<int64_t>(it->second);
-              has_blue = true;
             }
           }
 
-          if (has_index && has_red && has_green && has_blue) {
-            printf("Set LED %lld to color RGB(%lld, %lld, %lld)\n", index, red, green, blue);
-
+          if (index && red && green && blue) {
             // Send operation instructions to WS2812B
-            if ((index - 1) < kLedNum) {
+            if (index.value() < kLedNum) {
               char prop_name[8];
-              snprintf(prop_name, sizeof(prop_name), "color%lld", index + 1);
-              std::string color_name = GetColorName(g_strip.Color(red, green, blue));
-
-              g_ws2812b_iot_entity->UpdateState(prop_name, color_name);
-              g_strip.setPixelColor(index, g_strip.Color(red, green, blue));
+              snprintf(prop_name, sizeof(prop_name), "color%lld", index.value() + 1);
+              std::string color_str = ConvertRGBToJsonString(red, green, blue);
+              g_ws2812b_iot_entity->UpdateState(prop_name, color_str);
+              g_strip.setPixelColor(index.value(), g_strip.Color(red.value_or(0), green.value_or(0), blue.value_or(0)));
+              printf("Set LED %lld to color RGB(%lld, %lld, %lld)\n",
+                     index.value(),
+                     red.value_or(0),
+                     green.value_or(0),
+                     blue.value_or(0));
             }
             g_strip.show();
           }
         } else if (iot_message_event->function == "SetRangeIndexsColor") {  // Set the color from one light to another
-          int64_t start = 0;
-          int64_t end = 0;
-          int64_t red = 0;
-          int64_t green = 0;
-          int64_t blue = 0;
-          bool has_start = false;
-          bool has_end = false;
-          bool has_red = false;
-          bool has_green = false;
-          bool has_blue = false;
+          std::optional<int64_t> start;
+          std::optional<int64_t> end;
+          std::optional<int64_t> red;
+          std::optional<int64_t> green;
+          std::optional<int64_t> blue;
+
           if (const auto it = iot_message_event->parameters.find("start"); it != iot_message_event->parameters.end()) {
             if (std::get_if<int64_t>(&it->second)) {
               start = std::get<int64_t>(it->second);
-              has_start = true;
             }
           }
 
           if (const auto it = iot_message_event->parameters.find("end"); it != iot_message_event->parameters.end()) {
             if (std::get_if<int64_t>(&it->second)) {
               end = std::get<int64_t>(it->second);
-              has_end = true;
             }
           }
 
           if (const auto it = iot_message_event->parameters.find("red"); it != iot_message_event->parameters.end()) {
             if (std::get_if<int64_t>(&it->second)) {
               red = std::get<int64_t>(it->second);
-              has_red = true;
             }
           }
 
           if (const auto it = iot_message_event->parameters.find("green"); it != iot_message_event->parameters.end()) {
             if (std::get_if<int64_t>(&it->second)) {
               green = std::get<int64_t>(it->second);
-              has_green = true;
             }
           }
 
           if (const auto it = iot_message_event->parameters.find("blue"); it != iot_message_event->parameters.end()) {
             if (std::get_if<int64_t>(&it->second)) {
               blue = std::get<int64_t>(it->second);
-              has_blue = true;
             }
           }
 
-          if (has_start && has_end && has_red && has_green && has_blue) {
-            // ensure   start <= end
-            if (start > end) {
-              std::swap(start, end);
-            }
+          if (start && end && red && green && blue) {
+            if ((start.value() < kLedNum) && (end.value() < kLedNum)) {
+              // ensure   start <= end
+              if (start.value_or(0) > end.value_or(0)) {
+                start.swap(end);  // 等价于 std::swap(a, b)
+              }
 
-            printf("Set LEDs from %lld to %lld to color RGB(%lld, %lld, %lld)\n", start, end, red, green, blue);
+              printf("Set LEDs from %lld to %lld to color RGB(%lld, %lld, %lld)\n",
+                     start.value(),
+                     end.value(),
+                     red.value(),
+                     green.value(),
+                     blue.value());
 
-            // Send operation instructions to WS2812B
-            FillRange(start, end, red, green, blue);
-            std::string color_name = GetColorName(g_strip.Color(red, green, blue));
-            for (uint32_t i = start + 1; i <= end + 1; ++i) {
-              std::string prop_name = "color" + std::to_string(i);
-              g_ws2812b_iot_entity->UpdateState(prop_name, color_name);
+              // Send operation instructions to WS2812B
+              FillRange(start.value(), end.value(), red.value_or(0), green.value_or(0), blue.value_or(0));
+              std::string color_str = ConvertRGBToJsonString(red, green, blue);
+              for (uint32_t i = start.value_or(0) + 1; i <= end.value_or(0) + 1; ++i) {
+                std::string prop_name = "color" + std::to_string(i);
+                g_ws2812b_iot_entity->UpdateState(prop_name, color_str);
+              }
+              g_strip.show();
             }
-            g_strip.show();
           }
         } else if (iot_message_event->function == "SetAllIndexsColor") {  // Unified setting of all lights
-          int64_t red = 0;
-          int64_t green = 0;
-          int64_t blue = 0;
-          bool has_red = false;
-          bool has_green = false;
-          bool has_blue = false;
+          std::optional<int64_t> red;
+          std::optional<int64_t> green;
+          std::optional<int64_t> blue;
 
           if (const auto it = iot_message_event->parameters.find("red"); it != iot_message_event->parameters.end()) {
             if (std::get_if<int64_t>(&it->second)) {
               red = std::get<int64_t>(it->second);
-              has_red = true;
             }
           }
 
           if (const auto it = iot_message_event->parameters.find("green"); it != iot_message_event->parameters.end()) {
             if (std::get_if<int64_t>(&it->second)) {
               green = std::get<int64_t>(it->second);
-              has_green = true;
             }
           }
 
           if (const auto it = iot_message_event->parameters.find("blue"); it != iot_message_event->parameters.end()) {
             if (std::get_if<int64_t>(&it->second)) {
               blue = std::get<int64_t>(it->second);
-              has_blue = true;
             }
           }
 
-          if (has_red && has_green && has_blue) {
-            printf("Set all LEDs to color RGB(%lld, %lld, %lld)\n", red, green, blue);
+          if (red && green && blue) {
+            printf("Set all LEDs to color RGB(%lld, %lld, %lld)\n", red.value_or(0), green.value_or(0), blue.value_or(0));
 
             // Send operation instructions to WS2812B
-            uint32_t color = g_strip.Color(red, green, blue);
+            uint32_t color = g_strip.Color(red.value_or(0), green.value_or(0), blue.value_or(0));
             g_strip.fill(color);
-            std::string color_name = GetColorName(g_strip.Color(red, green, blue));
+            std::string color_str = ConvertRGBToJsonString(red, green, blue);
             for (uint32_t i = 1; i <= kLedNum; ++i) {
               std::string prop_name = "color" + std::to_string(i);
-              g_ws2812b_iot_entity->UpdateState(prop_name, color_name);
+              g_ws2812b_iot_entity->UpdateState(prop_name, color_str);
             }
             g_strip.show();
           }
@@ -626,9 +590,6 @@ void loop() {
             if (std::get_if<int64_t>(&brightness)) {
               printf("Set LED brightness: %lld\n", std::get<int64_t>(brightness));
 
-              // Send operation instructions to WS2812B
-              //   g_strip.setBrightness((uint8_t)brightness);
-              // 假设brightness总是存储整数
               if (auto int_ptr = std::get_if<long long>(&brightness)) {
                 g_strip.setBrightness(static_cast<uint8_t>(*int_ptr));
               } else {
