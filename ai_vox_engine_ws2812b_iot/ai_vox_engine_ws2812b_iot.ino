@@ -213,6 +213,7 @@ void InitIot() {
   // 初始化每个LED颜色
   for (uint32_t i = 1; i <= kLedNum; ++i) {
     std::string prop_name = "color" + std::to_string(i);
+    uint32_t no_color = g_strip.Color(0, 0, 0);
     g_ws2812b_iot_entity->UpdateState(prop_name, "无");
   }
 
@@ -262,7 +263,7 @@ void SetBrightness(uint8_t brightness) {
 }
 
 // Implementation of Region Filling Function - RGB version
-void FillRange(uint16_t startIndex, uint16_t endIndex, uint8_t red, uint8_t green, uint8_t blue) {
+void FillRangeLed(uint16_t startIndex, uint16_t endIndex, uint8_t red, uint8_t green, uint8_t blue) {
   // Ensure that the starting and ending Indexs are within the valid range
   if (startIndex >= kLedNum || endIndex >= kLedNum || startIndex > endIndex) {
     return;
@@ -472,6 +473,12 @@ void loop() {
           }
 
           if (index && red && green && blue) {
+            printf("Set LED %lld to color RGB(%lld, %lld, %lld)\n",
+                   index.value(),
+                   red.value_or(0),
+                   green.value_or(0),
+                   blue.value_or(0));
+
             // Send operation instructions to WS2812B
             if (index.value() < kLedNum) {
               char prop_name[8];
@@ -539,7 +546,7 @@ void loop() {
                      blue.value());
 
               // Send operation instructions to WS2812B
-              FillRange(start.value(), end.value(), red.value_or(0), green.value_or(0), blue.value_or(0));
+              FillRangeLed(start.value(), end.value(), red.value_or(0), green.value_or(0), blue.value_or(0));
               std::string color_str = ConvertRGBToJsonString(red, green, blue);
               for (uint32_t i = start.value_or(0) + 1; i <= end.value_or(0) + 1; ++i) {
                 std::string prop_name = "color" + std::to_string(i);
@@ -593,7 +600,7 @@ void loop() {
               if (auto int_ptr = std::get_if<long long>(&brightness)) {
                 g_strip.setBrightness(static_cast<uint8_t>(*int_ptr));
               } else {
-                g_strip.setBrightness(128);  // 默认值
+                g_strip.setBrightness(128);
               }
               g_strip.show();
 

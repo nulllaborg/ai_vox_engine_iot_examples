@@ -40,6 +40,7 @@ class AudioInputDeviceSph0645 : public ai_vox::AudioInputDevice {
         .dma_frame_num = 320,
         .auto_clear_after_cb = true,
         .auto_clear_before_cb = false,
+        .allow_pd = false,
         .intr_priority = 0,
     };
 
@@ -93,7 +94,9 @@ class AudioInputDeviceSph0645 : public ai_vox::AudioInputDevice {
       .ws_width = I2S_DATA_BIT_WIDTH_32BIT,
       .ws_pol = false,
       .bit_shift = true,
-#ifdef I2S_HW_VERSION_2
+#if SOC_I2S_HW_VERSION_1
+      .msb_right = false,
+#else
       .left_align = true,
       .big_endian = false,
       .bit_order_lsb = false,

@@ -1,5 +1,4 @@
 #include <WiFi.h>
-#include <driver/ledc.h>
 #include <driver/spi_common.h>
 #include <esp_heap_caps.h>
 #include <esp_lcd_panel_io.h>
@@ -21,34 +20,24 @@
 #endif
 
 #ifndef WIFI_SSID
-#define WIFI_SSID "emakefun"
+#define WIFI_SSID "ssid"
 #endif
 
 #ifndef WIFI_PASSWORD
-#define WIFI_PASSWORD "501416wf"
+#define WIFI_PASSWORD "password"
 #endif
 
 namespace {
-
-// Definition of servo A pin
-constexpr gpio_num_t kServoAPin = GPIO_NUM_46;
-
-// Definition of servo B pin
-constexpr gpio_num_t kServoBPin = GPIO_NUM_47;
-
-// Microphone Pin Definition (SPI Communication)
 constexpr gpio_num_t kMicPinBclk = GPIO_NUM_5;
 constexpr gpio_num_t kMicPinWs = GPIO_NUM_2;
 constexpr gpio_num_t kMicPinDin = GPIO_NUM_4;
 
-// // Speaker Pin Definition (I2S Communication)
 constexpr gpio_num_t kSpeakerPinBclk = GPIO_NUM_13;
 constexpr gpio_num_t kSpeakerPinWs = GPIO_NUM_14;
 constexpr gpio_num_t kSpeakerPinDout = GPIO_NUM_1;
 
 constexpr gpio_num_t kTriggerPin = GPIO_NUM_0;
 
-// Definition of display screen pins (SPI communication)
 constexpr gpio_num_t kDisplayBacklightPin = GPIO_NUM_11;
 constexpr gpio_num_t kDisplayMosiPin = GPIO_NUM_17;
 constexpr gpio_num_t kDisplayClkPin = GPIO_NUM_16;
@@ -56,7 +45,8 @@ constexpr gpio_num_t kDisplayDcPin = GPIO_NUM_12;
 constexpr gpio_num_t kDisplayRstPin = GPIO_NUM_21;
 constexpr gpio_num_t kDisplayCsPin = GPIO_NUM_15;
 
-// Display screen parameter configuration
+constexpr gpio_num_t kLedPin = GPIO_NUM_46;
+
 constexpr auto kDisplaySpiMode = 0;
 constexpr uint32_t kDisplayWidth = 240;
 constexpr uint32_t kDisplayHeight = 240;
@@ -66,12 +56,9 @@ constexpr bool kDisplayInvertColor = true;
 constexpr bool kDisplaySwapXY = false;
 constexpr auto kDisplayRgbElementOrder = LCD_RGB_ELEMENT_ORDER_RGB;
 
-constexpr uint32_t kFreq = 50;
-constexpr uint8_t kResolution = 12;
-const uint16_t MIN_PULSE = 500;
-const uint16_t MAX_PULSE = 2500;
-
-std::shared_ptr<ai_vox::iot::Entity> g_servo_iot_entity;
+std::shared_ptr<ai_vox::iot::Entity> g_led_iot_entity;
+std::shared_ptr<ai_vox::iot::Entity> g_screen_iot_entity;
+std::shared_ptr<ai_vox::iot::Entity> g_speaker_iot_entity;
 auto g_audio_output_device = std::make_shared<ai_vox::I2sStdAudioOutputDevice>(kSpeakerPinBclk, kSpeakerPinWs, kSpeakerPinDout);
 
 std::unique_ptr<Display> g_display;
@@ -133,99 +120,115 @@ void InitDisplay() {
   g_display->Start();
 }
 
+void SetLedState(bool targetState) {
+  int result;
+  // Record the original state
+  bool original_state = digitalRead(kLedPin);
+  digitalWrite(kLedPin, targetState ? HIGH : LOW);
+
+  delay(10);
+
+  bool current_state = digitalRead(kLedPin);
+
+  if (current_state == (targetState ? HIGH : LOW)) {
+    if (original_state != current_state) {
+      printf("Success: LED %s\n", targetState ? "turned ON" : "turned OFF");
+    } else {
+      printf("Warning: LED was already %s\n", targetState ? "ON" : "OFF");
+    }
+    result = targetState ? 1 : 0;
+    Serial.println(result);
+
+    // Update entity status (only when the status changes)
+    if (g_led_iot_entity != nullptr) {
+      g_led_iot_entity->UpdateState("state", targetState);
+    }
+  } else {
+    printf("ERROR: Failed to %s LED! (Pin %d state: %d)\n", targetState ? "turn ON" : "turn OFF", kLedPin, current_state);
+  }
+}
+
 void InitIot() {
   auto& ai_vox_engine = ai_vox::Engine::GetInstance();
 
-  // g_servo_iot_controller
-  // 1. Define the properties of the g_servo_iot_controller motor entity
-  std::vector<ai_vox::iot::Property> servo_iot_properties({
+  // Speaker
+  // 1.Define the properties for the speaker entity
+  std::vector<ai_vox::iot::Property> speaker_properties({
       {
-          "anglevalue_a",                      // property name
-          "舵机A的当前角度(0-180之间的整数)",  // property description
-          ai_vox::iot::ValueType::kNumber      // property type: number, string or bool
+          "volume",                        // property name
+          "当前音量值",                    // property description
+          ai_vox::iot::ValueType::kNumber  // property type: number, string or bool
       },
-      {"anglevalue_b", "舵机B的当前角度(0-180之间的整数)", ai_vox::iot::ValueType::kNumber},
-      {"status", "舵机驱动状态", ai_vox::iot::ValueType::kString}
       // add more properties as needed
   });
-  // 2.Define the functions for the g_servo_iot_controller motor entity
-  std::vector<ai_vox::iot::Function> servo_iot_functions({
 
-      {"SetSenvoA",      // function name
-       "设置舵机A角度",  // function description
-       {{
-           "anglevalue_a",                   // parameter name
-           "舵机角度(0-180之间的整数)",      // parameter description
-           ai_vox::iot::ValueType::kNumber,  // parameter type
-           true                              // parameter required
-       }}},
-      {"SetSenvoB", "设置舵机B角度", {{"anglevalue_b", "舵机角度0-180之间的整数)", ai_vox::iot::ValueType::kNumber, true}}},
-      {"SetBothMotors",
-       "同时设置舵机A和舵机B角度",
-       {{"anglevalue_a", "舵机A角度(0-180之间的整数)", ai_vox::iot::ValueType::kNumber, true},
-        {"anglevalue_b", "舵机B角度(0-180之间的整数)", ai_vox::iot::ValueType::kNumber, true}}}
-
+  // 2.Define the functions for the speaker entity
+  std::vector<ai_vox::iot::Function> speaker_functions({
+      {"SetVolume",  // function name
+       "设置音量",   // function description
+       {
+           {
+               "volume",                         // parameter name
+               "0到100之间的整数",               // parameter description
+               ai_vox::iot::ValueType::kNumber,  // parameter type
+               true                              // parameter required
+           },
+           // add more parameters as needed
+       }},
       // add more functions as needed
   });
-  // 3.Create the g_servo_iot_controller motor entity
-  g_servo_iot_entity = std::make_shared<ai_vox::iot::Entity>("Servo",                          // name
-                                                             "舵机",                           // description
-                                                             std::move(servo_iot_properties),  // properties
-                                                             std::move(servo_iot_functions)    // functions
+
+  // 3.Create the speaker entity
+  g_speaker_iot_entity = std::make_shared<ai_vox::iot::Entity>("Speaker",                      // name
+                                                               "扬声器",                       // description
+                                                               std::move(speaker_properties),  // properties
+                                                               std::move(speaker_functions)    // functions
   );
 
-  // 4.Initialize the g_servo_iot_controller motor entity with default values
-  g_servo_iot_entity->UpdateState("anglevalue_a", 90);
-  g_servo_iot_entity->UpdateState("anglevalue_b", 90);
+  // 4.Initialize the speaker entity with default values
+  g_speaker_iot_entity->UpdateState("volume", g_audio_output_device->volume());
 
-  // 5.Register the g_servo_iot_controller motor entity with the AI Vox engine
-  ai_vox_engine.RegisterIotEntity(g_servo_iot_entity);
-}
+  // 5.Register the speaker entity with the AI Vox engine
+  ai_vox_engine.RegisterIotEntity(g_speaker_iot_entity);
 
-void InitSingle(uint8_t pin, ledc_channel_t channel) {
-  // Configure Timer
-  ledc_timer_config_t timer_conf = {
-      .speed_mode = LEDC_LOW_SPEED_MODE,
-      .duty_resolution = static_cast<ledc_timer_bit_t>(kResolution),
-      .timer_num = LEDC_TIMER_0,  // Two servos share one timer (ensuring that channels do not conflict)
-      .freq_hz = kFreq,
-      .clk_cfg = LEDC_AUTO_CLK};
-  ledc_timer_config(&timer_conf);
+  // LED
+  // 1.Define the properties for the LED entity
+  std::vector<ai_vox::iot::Property> led_properties({
+      {
+          "state",                       // property name
+          "LED灯开关状态",               // property description
+          ai_vox::iot::ValueType::kBool  // property type
+      },
+      // add more properties as needed
+  });
 
-  // Configure channels
-  ledc_channel_config_t channel_conf = {.gpio_num = pin,
-                                        .speed_mode = LEDC_LOW_SPEED_MODE,
-                                        .channel = channel,
-                                        .intr_type = LEDC_INTR_DISABLE,
-                                        .timer_sel = LEDC_TIMER_0,
-                                        .duty = 0,
-                                        .hpoint = 0};
-  ledc_channel_config(&channel_conf);
-}
+  // 2.Define the functions for the LED entity
+  std::vector<ai_vox::iot::Function> led_functions({
+      {"TurnOn",     // function name
+       "打开LED灯",  // function description
+       {
+           // no parameters
+       }},
+      {"TurnOff",    // function name
+       "关闭LED灯",  // function description
+       {
+           // no parameters
+       }},
+      // add more functions as needed
+  });
 
-uint32_t CalculateDuty(uint8_t angle) {
-  // Map the angle to the pulse width（500-2500μs）
-  uint32_t pulse_width = map(angle, 0, 180, MIN_PULSE, MAX_PULSE);
-  // Calculate duty cycle (based on frequency and resolution)
-  return (pulse_width * (1 << kResolution)) / (1000000 / kFreq);
-}
+  // 3.Create the LED entity
+  g_led_iot_entity = std::make_shared<ai_vox::iot::Entity>("Led",                      // name
+                                                           "LED灯",                    // description
+                                                           std::move(led_properties),  // properties
+                                                           std::move(led_functions)    // functions
+  );
 
-void SetAngle(char servo, uint8_t angle) {
-  angle = constrain(angle, 0, 180);
-  uint32_t duty = CalculateDuty(angle);
+  // 4.Initialize the LED entity with default values
+  g_led_iot_entity->UpdateState("state", false);
 
-  switch (servo) {
-    case 'A':
-      ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0, duty);
-      ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_0);
-      break;
-    case 'B':
-      ledc_set_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1, duty);
-      ledc_update_duty(LEDC_LOW_SPEED_MODE, LEDC_CHANNEL_1);
-      break;
-    default:
-      return;  // Invalid servo motor identifier
-  }
+  // 5.Register the LED entity with the AI Vox engine
+  ai_vox_engine.RegisterIotEntity(g_led_iot_entity);
 }
 
 #ifdef PRINT_HEAP_INFO_INTERVAL
@@ -275,10 +278,9 @@ void PrintMemInfo() {
 void setup() {
   Serial.begin(115200);
 
-  InitSingle(kServoAPin, LEDC_CHANNEL_0);
-  InitSingle(kServoBPin, LEDC_CHANNEL_1);
+  pinMode(kLedPin, OUTPUT);
 
-  InitDisplay();  // Screen initialization
+  InitDisplay();
 
   if (heap_caps_get_total_size(MALLOC_CAP_SPIRAM) == 0) {
     g_display->SetChatMessage(Display::Role::kSystem, "No SPIRAM available, please check your board.");
@@ -393,77 +395,26 @@ void loop() {
         }
       }
 
-      if (iot_message_event->name == "Servo") {
-        if (iot_message_event->function == "SetBothMotors") {  // Simultaneously set the angle of servo A and servo B
-          std::optional<uint8_t> servo_iot_a_angle_value;
-          std::optional<uint8_t> servo_iot_b_angle_value;
+      if (iot_message_event->name == "Led") {
+        if (iot_message_event->function == "TurnOn") {
+          printf("turn on led\n");
+          SetLedState(true);
 
-          if (const auto it = iot_message_event->parameters.find("anglevalue_a"); it != iot_message_event->parameters.end()) {
-            auto param = it->second;
-            if (const auto angle_val = std::get_if<int64_t>(&param)) {
-              if (*angle_val >= 0 && *angle_val <= 180) {
-                servo_iot_a_angle_value = static_cast<uint8_t>(*angle_val);
-              }
+          g_led_iot_entity->UpdateState("state", true);  //  Note: Must UpdateState after change the device state
+        } else if (iot_message_event->function == "TurnOff") {
+          printf("turn off led\n");
+          SetLedState(false);
+        }
+      } else if (iot_message_event->name == "Speaker") {
+        if (iot_message_event->function == "SetVolume") {
+          if (const auto it = iot_message_event->parameters.find("volume"); it != iot_message_event->parameters.end()) {
+            auto volume = it->second;
+            if (std::get_if<int64_t>(&volume)) {
+              printf("Speaker volume: %lld\n", std::get<int64_t>(volume));
+              g_audio_output_device->SetVolume(std::get<int64_t>(volume));
+              g_speaker_iot_entity->UpdateState(
+                  "volume", std::get<int64_t>(volume));  // Note: Must UpdateState after change the device state
             }
-          }
-
-          if (const auto it = iot_message_event->parameters.find("anglevalue_b"); it != iot_message_event->parameters.end()) {
-            auto param = it->second;
-            if (const auto angle_val = std::get_if<int64_t>(&param)) {
-              if (*angle_val >= 0 && *angle_val <= 180) {
-                servo_iot_b_angle_value = static_cast<uint8_t>(*angle_val);
-              }
-            }
-          }
-
-          if (servo_iot_a_angle_value && servo_iot_b_angle_value) {
-            printf("Starting both servos - ServoA: Angle %u | ServoB: Angle %u\n",
-                   servo_iot_a_angle_value.value(),
-                   servo_iot_b_angle_value.value());
-            // Servo control function call
-            SetAngle('A', servo_iot_a_angle_value.value());  // Set servo A
-            SetAngle('B', servo_iot_b_angle_value.value());  // Set servo B
-            g_servo_iot_entity->UpdateState("anglevalue_a", servo_iot_a_angle_value.value());
-            g_servo_iot_entity->UpdateState("anglevalue_b", servo_iot_b_angle_value.value());
-            g_servo_iot_entity->UpdateState("status", "running");
-          }
-        } else if (iot_message_event->function == "SetSenvoA") {  // Set the angle of servo A
-          std::optional<uint8_t> servo_iot_a_angle_value;
-
-          if (const auto it = iot_message_event->parameters.find("anglevalue_a"); it != iot_message_event->parameters.end()) {
-            auto param = it->second;
-            if (const auto speed_val = std::get_if<int64_t>(&param)) {
-              if (*speed_val >= 0 && *speed_val <= 180) {
-                servo_iot_a_angle_value = static_cast<uint8_t>(*speed_val);
-              }
-            }
-          }
-
-          if (servo_iot_a_angle_value) {
-            printf("Setting ServoA - Angle: %u\n", servo_iot_a_angle_value.value());
-            // Servo control function call
-            SetAngle('A', servo_iot_a_angle_value.value());  // Set servo A
-            g_servo_iot_entity->UpdateState("anglevalue_a", servo_iot_a_angle_value.value());
-            g_servo_iot_entity->UpdateState("status", "running");
-          }
-        } else if (iot_message_event->function == "SetSenvoB") {  // Set the angle of servo B
-          std::optional<uint8_t> servo_iot_b_angle_value;
-
-          if (const auto it = iot_message_event->parameters.find("anglevalue_b"); it != iot_message_event->parameters.end()) {
-            auto param = it->second;
-            if (const auto speed_val = std::get_if<int64_t>(&param)) {
-              if (*speed_val >= 0 && *speed_val <= 180) {
-                servo_iot_b_angle_value = static_cast<uint8_t>(*speed_val);
-              }
-            }
-          }
-
-          if (servo_iot_b_angle_value) {
-            printf("Setting ServoB - Angle: %u\n", servo_iot_b_angle_value.value());
-            // Servo control function call
-            SetAngle('B', servo_iot_b_angle_value.value());  // Set servo B
-            g_servo_iot_entity->UpdateState("anglevalue_b", servo_iot_b_angle_value.value());
-            g_servo_iot_entity->UpdateState("status", "running");
           }
         }
       }
