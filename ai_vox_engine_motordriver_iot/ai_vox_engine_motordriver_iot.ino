@@ -65,8 +65,8 @@ constexpr bool kDisplayInvertColor = true;
 constexpr bool kDisplaySwapXY = false;
 constexpr auto kDisplayRgbElementOrder = LCD_RGB_ELEMENT_ORDER_RGB;
 
-constexpr bool FORWARD = true;   // Indicate forward rotation
-constexpr bool REVERSE = false;  // Indicate reversal
+constexpr bool kForword = true;   // Indicate forward rotation
+constexpr bool kReverse = false;  // Indicate reversal
 
 std::shared_ptr<ai_vox::iot::Entity> g_motor_driver_iot_entity;
 auto g_audio_output_device = std::make_shared<ai_vox::I2sStdAudioOutputDevice>(kSpeakerPinBclk, kSpeakerPinWs, kSpeakerPinDout);
@@ -202,9 +202,9 @@ void InitIot() {
 
   // 4.Initialize the motor driver entity with default values
   g_motor_driver_iot_entity->UpdateState("speed_a", 0);
-  g_motor_driver_iot_entity->UpdateState("direction_a", FORWARD);
+  g_motor_driver_iot_entity->UpdateState("direction_a", kForword);
   g_motor_driver_iot_entity->UpdateState("speed_b", 0);
-  g_motor_driver_iot_entity->UpdateState("direction_b", FORWARD);
+  g_motor_driver_iot_entity->UpdateState("direction_b", kForword);
   g_motor_driver_iot_entity->UpdateState("status", "stopped");
 
   // 5.Register the motor driver entity with the AI Vox engine
@@ -228,7 +228,7 @@ void MotorRun(char motor, bool direction, int speed) {
   }
 
   // Set direction
-  if (direction == FORWARD) {
+  if (direction == kForword) {
     analogWrite(motor_in_1, speed);
     digitalWrite(motor_in_2, LOW);
   } else {
@@ -242,8 +242,8 @@ void MotorBegin() {
   pinMode(kMotorAIn2, OUTPUT);
   pinMode(kMotorBIn1, OUTPUT);
   pinMode(kMotorBIn2, OUTPUT);
-  MotorRun('A', FORWARD, 0);  // Set the speed to 0 to stop
-  MotorRun('B', FORWARD, 0);  // Set the speed to 0 to stop
+  MotorRun('A', kForword, 0);  // Set the speed to 0 to stop
+  MotorRun('B', kForword, 0);  // Set the speed to 0 to stop
 }
 
 #ifdef PRINT_HEAP_INFO_INTERVAL
@@ -413,21 +413,16 @@ void loop() {
 
       if (iot_message_event->name == "MotorDriver") {
         if (iot_message_event->function == "StartBothMotors") {  // Simultaneously activate motors A and B
-          uint8_t motor_driver_iot_a_speed = 0;
-          uint8_t motor_driver_iot_b_speed = 0;
-          bool motor_driver_iot_a_direction = FORWARD;
-          bool motor_driver_iot_b_direction = FORWARD;
-          bool has_motor_driver_iot_a_speed = false;
-          bool has_motor_driver_iot_b_speed = false;
-          bool has_motor_driver_iot_a_direction = false;
-          bool has_motor_driver_iot_b_direction = false;
+          std::optional<uint8_t> motor_driver_iot_a_speed;
+          std::optional<uint8_t> motor_driver_iot_b_speed;
+          std::optional<bool> motor_driver_iot_a_direction;
+          std::optional<bool> motor_driver_iot_b_direction;
 
           if (const auto it = iot_message_event->parameters.find("speed_a"); it != iot_message_event->parameters.end()) {
             auto param = it->second;
             if (const auto speed_val = std::get_if<int64_t>(&param)) {
               if (*speed_val >= 0 && *speed_val <= 255) {
                 motor_driver_iot_a_speed = static_cast<uint8_t>(*speed_val);
-                has_motor_driver_iot_a_speed = true;
               }
             }
           }
@@ -437,7 +432,6 @@ void loop() {
             if (const auto speed_val = std::get_if<int64_t>(&param)) {
               if (*speed_val >= 0 && *speed_val <= 255) {
                 motor_driver_iot_b_speed = static_cast<uint8_t>(*speed_val);
-                has_motor_driver_iot_b_speed = true;
               }
             }
           }
@@ -446,7 +440,6 @@ void loop() {
             auto param = it->second;
             if (const auto dir_val = std::get_if<bool>(&param)) {
               motor_driver_iot_a_direction = *dir_val;
-              has_motor_driver_iot_a_direction = true;
             }
           }
 
@@ -454,39 +447,36 @@ void loop() {
             auto param = it->second;
             if (const auto dir_val = std::get_if<bool>(&param)) {
               motor_driver_iot_b_direction = *dir_val;
-              has_motor_driver_iot_b_direction = true;
             }
           }
 
-          if (has_motor_driver_iot_a_speed && has_motor_driver_iot_b_speed && has_motor_driver_iot_a_direction &&
-              has_motor_driver_iot_b_direction) {
+          if (motor_driver_iot_a_speed && motor_driver_iot_b_speed && motor_driver_iot_a_direction &&
+              motor_driver_iot_b_direction) {
             printf("Starting both g_motor_iot_controller - MotorA: Speed %u, Direction %s | MotorB: Speed %u, Direction %s\n",
-                   motor_driver_iot_a_speed,
-                   motor_driver_iot_a_direction ? "FORWARD" : "REVERSE",
-                   motor_driver_iot_b_speed,
-                   motor_driver_iot_b_direction ? "FORWARD" : "REVERSE");
+                   motor_driver_iot_a_speed.value(),
+                   motor_driver_iot_a_direction.value() ? "FORWARD" : "REVERSE",
+                   motor_driver_iot_b_speed.value(),
+                   motor_driver_iot_b_direction.value() ? "FORWARD" : "REVERSE");
 
-            MotorRun('A', motor_driver_iot_a_direction, motor_driver_iot_a_speed);
-            MotorRun('B', motor_driver_iot_b_direction, motor_driver_iot_b_speed);
-            g_motor_driver_iot_entity->UpdateState("speed_a", motor_driver_iot_a_speed);
-            g_motor_driver_iot_entity->UpdateState("direction_a", motor_driver_iot_a_direction);
-            g_motor_driver_iot_entity->UpdateState("speed_b", motor_driver_iot_b_speed);
-            g_motor_driver_iot_entity->UpdateState("direction_b", motor_driver_iot_b_direction);
+            MotorRun('A', motor_driver_iot_a_direction.value(), motor_driver_iot_a_speed.value());
+            MotorRun('B', motor_driver_iot_b_direction.value(), motor_driver_iot_b_speed.value());
+            g_motor_driver_iot_entity->UpdateState("speed_a", motor_driver_iot_a_speed.value());
+            g_motor_driver_iot_entity->UpdateState("direction_a", motor_driver_iot_a_direction.value());
+            g_motor_driver_iot_entity->UpdateState("speed_b", motor_driver_iot_b_speed.value());
+            g_motor_driver_iot_entity->UpdateState("direction_b", motor_driver_iot_b_direction.value());
             g_motor_driver_iot_entity->UpdateState(
-                "status", (motor_driver_iot_a_speed > 0 || motor_driver_iot_b_speed > 0) ? "running" : "stopped");
+                "status",
+                (motor_driver_iot_a_speed.value() > 0 || motor_driver_iot_b_speed.value() > 0) ? "running" : "stopped");
           }
         } else if (iot_message_event->function == "StartMotorA") {  // Operate motor A
-          uint8_t motor_driver_iot_a_speed = 0;
-          bool motor_driver_iot_a_direction = FORWARD;
-          bool has_motor_driver_iot_a_speed = false;
-          bool has_motor_driver_iot_a_direction = false;
+          std::optional<uint8_t> motor_driver_iot_a_speed;
+          std::optional<bool> motor_driver_iot_a_direction;
 
           if (const auto it = iot_message_event->parameters.find("speed"); it != iot_message_event->parameters.end()) {
             auto param = it->second;
             if (const auto speed_val = std::get_if<int64_t>(&param)) {
               if (*speed_val >= 0 && *speed_val <= 255) {
                 motor_driver_iot_a_speed = static_cast<uint8_t>(*speed_val);
-                has_motor_driver_iot_a_speed = true;
               }
             }
           }
@@ -495,31 +485,27 @@ void loop() {
             auto param = it->second;
             if (const auto dir_val = std::get_if<bool>(&param)) {
               motor_driver_iot_a_direction = *dir_val;
-              has_motor_driver_iot_a_direction = true;
             }
           }
 
-          if (has_motor_driver_iot_a_speed && has_motor_driver_iot_a_direction) {
+          if (motor_driver_iot_a_speed && motor_driver_iot_a_direction) {
             printf("Setting MotorA - Speed: %u, Direction: %s\n",
-                   motor_driver_iot_a_speed,
-                   motor_driver_iot_a_direction ? "FORWARD" : "REVERSE");
-            MotorRun('A', motor_driver_iot_a_direction, motor_driver_iot_a_speed);
-            g_motor_driver_iot_entity->UpdateState("speed_a", motor_driver_iot_a_speed);
-            g_motor_driver_iot_entity->UpdateState("direction_a", motor_driver_iot_a_direction);
-            g_motor_driver_iot_entity->UpdateState("status", motor_driver_iot_a_speed > 0 ? "running" : "stopped");
+                   motor_driver_iot_a_speed.value(),
+                   motor_driver_iot_a_direction.value() ? "FORWARD" : "REVERSE");
+            MotorRun('A', motor_driver_iot_a_direction.value(), motor_driver_iot_a_speed.value());
+            g_motor_driver_iot_entity->UpdateState("speed_a", motor_driver_iot_a_speed.value());
+            g_motor_driver_iot_entity->UpdateState("direction_a", motor_driver_iot_a_direction.value());
+            g_motor_driver_iot_entity->UpdateState("status", motor_driver_iot_a_speed.value() > 0 ? "running" : "stopped");
           }
         } else if (iot_message_event->function == "StartMotorB") {  // Operate Motor B
-          uint8_t motor_driver_iot_b_speed = 0;
-          bool motor_driver_iot_b_direction = FORWARD;
-          bool has_motor_driver_iot_b_speed = false;
-          bool has_motor_driver_iot_b_direction = false;
+          std::optional<uint8_t> motor_driver_iot_b_speed;
+          std::optional<bool> motor_driver_iot_b_direction;
 
           if (const auto it = iot_message_event->parameters.find("speed"); it != iot_message_event->parameters.end()) {
             auto param = it->second;
             if (const auto speed_val = std::get_if<int64_t>(&param)) {
               if (*speed_val >= 0 && *speed_val <= 255) {
                 motor_driver_iot_b_speed = static_cast<uint8_t>(*speed_val);
-                has_motor_driver_iot_b_speed = true;
               }
             }
           }
@@ -528,34 +514,35 @@ void loop() {
             auto param = it->second;
             if (const auto dir_val = std::get_if<bool>(&param)) {
               motor_driver_iot_b_direction = *dir_val;
-              has_motor_driver_iot_b_direction = true;
             }
           }
 
-          if (has_motor_driver_iot_b_speed && has_motor_driver_iot_b_direction) {
+          if (motor_driver_iot_b_speed && motor_driver_iot_b_direction) {
             printf("Setting MotorB - Speed: %u, Direction: %s\n",
-                   motor_driver_iot_b_speed,
-                   motor_driver_iot_b_direction ? "FORWARD" : "REVERSE");
+                   motor_driver_iot_b_speed.value(),
+                   motor_driver_iot_b_direction.value() ? "FORWARD" : "REVERSE");
             // g_motor_driver->setMotor(MOTOR_B, speed, direction);
-            MotorRun('B', motor_driver_iot_b_direction, motor_driver_iot_b_speed);
-            g_motor_driver_iot_entity->UpdateState("speed_b", motor_driver_iot_b_speed);
-            g_motor_driver_iot_entity->UpdateState("direction_b", motor_driver_iot_b_direction);
-            g_motor_driver_iot_entity->UpdateState("status", motor_driver_iot_b_speed > 0 ? "running" : "stopped");
+            MotorRun('B', motor_driver_iot_b_direction.value(), motor_driver_iot_b_speed.value());
+            g_motor_driver_iot_entity->UpdateState("speed_b", motor_driver_iot_b_speed.value());
+            g_motor_driver_iot_entity->UpdateState("direction_b", motor_driver_iot_b_direction.value());
+            g_motor_driver_iot_entity->UpdateState("status", motor_driver_iot_b_speed.value() > 0 ? "running" : "stopped");
           }
         } else if (iot_message_event->function == "StopMotorA") {  // Stop motor A
           printf("Stopping MotorA\n");
-          MotorRun('A', FORWARD, 0);  // Set the speed to 0 to stop
+          MotorRun('A', kForword, 0);  // Set the speed to 0 to stop
           g_motor_driver_iot_entity->UpdateState("speed_a", 0);
           g_motor_driver_iot_entity->UpdateState("status", "stopped");
+
         } else if (iot_message_event->function == "StopMotorB") {  // Stop motor B
           printf("Stopping MotorB\n");
-          MotorRun('B', FORWARD, 0);  // Set the speed to 0 to stop
+          MotorRun('B', kForword, 0);  // Set the speed to 0 to stop
           g_motor_driver_iot_entity->UpdateState("speed_b", 0);
           g_motor_driver_iot_entity->UpdateState("status", "stopped");
+
         } else if (iot_message_event->function == "StopAllMotors") {  // Two motors stop simultaneously
           printf("Stopping all g_motor_iot_controller\n");
-          MotorRun('A', FORWARD, 0);  // Set the speed to 0 to stop
-          MotorRun('B', FORWARD, 0);  // Set the speed to 0 to stop
+          MotorRun('A', kForword, 0);  // Set the speed to 0 to stop
+          MotorRun('B', kForword, 0);  // Set the speed to 0 to stop
           g_motor_driver_iot_entity->UpdateState("speed_a", 0);
           g_motor_driver_iot_entity->UpdateState("speed_b", 0);
           g_motor_driver_iot_entity->UpdateState("status", "stopped");

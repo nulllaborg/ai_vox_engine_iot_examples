@@ -263,7 +263,7 @@ void SetBrightness(uint8_t brightness) {
 }
 
 // Implementation of Region Filling Function - RGB version
-void FillRangeLed(uint16_t startIndex, uint16_t endIndex, uint8_t red, uint8_t green, uint8_t blue) {
+void FillRange(uint16_t startIndex, uint16_t endIndex, uint8_t red, uint8_t green, uint8_t blue) {
   // Ensure that the starting and ending Indexs are within the valid range
   if (startIndex >= kLedNum || endIndex >= kLedNum || startIndex > endIndex) {
     return;
@@ -546,7 +546,7 @@ void loop() {
                      blue.value());
 
               // Send operation instructions to WS2812B
-              FillRangeLed(start.value(), end.value(), red.value_or(0), green.value_or(0), blue.value_or(0));
+              FillRange(start.value(), end.value(), red.value_or(0), green.value_or(0), blue.value_or(0));
               std::string color_str = ConvertRGBToJsonString(red, green, blue);
               for (uint32_t i = start.value_or(0) + 1; i <= end.value_or(0) + 1; ++i) {
                 std::string prop_name = "color" + std::to_string(i);
