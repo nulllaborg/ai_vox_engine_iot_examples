@@ -68,8 +68,8 @@ constexpr auto kDisplayRgbElementOrder = LCD_RGB_ELEMENT_ORDER_RGB;
 
 constexpr uint32_t kFreq = 50;
 constexpr uint8_t kResolution = 12;
-const uint16_t MIN_PULSE = 500;
-const uint16_t MAX_PULSE = 2500;
+const uint16_t kMinPulse = 500;
+const uint16_t kMaxPulse = 2500;
 
 std::shared_ptr<ai_vox::iot::Entity> g_servo_iot_entity;
 auto g_audio_output_device = std::make_shared<ai_vox::I2sStdAudioOutputDevice>(kSpeakerPinBclk, kSpeakerPinWs, kSpeakerPinDout);
@@ -205,7 +205,7 @@ void InitSingle(uint8_t pin, ledc_channel_t channel) {
 
 uint32_t CalculateDuty(uint8_t angle) {
   // Map the angle to the pulse width（500-2500μs）
-  uint32_t pulse_width = map(angle, 0, 180, MIN_PULSE, MAX_PULSE);
+  uint32_t pulse_width = map(angle, 0, 180, kMinPulse, kMaxPulse);
   // Calculate duty cycle (based on frequency and resolution)
   return (pulse_width * (1 << kResolution)) / (1000000 / kFreq);
 }
