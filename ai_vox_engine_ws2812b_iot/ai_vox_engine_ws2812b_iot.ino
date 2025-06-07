@@ -228,12 +228,6 @@ void InitWs2812b() {
   g_strip.show();              // Turn off all LEDs during initialization
 }
 
-#include <cJSON.h>
-
-#include <algorithm>  // for std::clamp
-#include <optional>
-#include <string>
-
 std::string ConvertRGBToJsonString(const std::optional<int64_t>& red,
                                    const std::optional<int64_t>& green,
                                    const std::optional<int64_t>& blue) {
