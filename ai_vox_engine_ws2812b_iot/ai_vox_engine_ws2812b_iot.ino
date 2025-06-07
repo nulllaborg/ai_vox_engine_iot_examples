@@ -1,6 +1,7 @@
 #include <Adafruit_NeoPixel.h>
 #include <ArduinoJson.h>
 #include <WiFi.h>
+#include <cJSON.h>
 #include <driver/spi_common.h>
 #include <esp_heap_caps.h>
 #include <esp_lcd_panel_io.h>
@@ -213,7 +214,6 @@ void InitIot() {
   // 初始化每个LED颜色
   for (uint32_t i = 1; i <= kLedNum; ++i) {
     std::string prop_name = "color" + std::to_string(i);
-    uint32_t no_color = g_strip.Color(0, 0, 0);
     g_ws2812b_iot_entity->UpdateState(prop_name, "无");
   }
 
@@ -222,38 +222,40 @@ void InitIot() {
 }
 
 // ws2812b init funtion
-void Ws2812bInit() {
+void InitWs2812b() {
   g_strip.begin();
   g_strip.setBrightness(128);  // Set the default brightness to medium
   g_strip.show();              // Turn off all LEDs during initialization
 }
 
+#include <cJSON.h>
+
+#include <algorithm>  // for std::clamp
+#include <optional>
+#include <string>
+
 std::string ConvertRGBToJsonString(const std::optional<int64_t>& red,
                                    const std::optional<int64_t>& green,
                                    const std::optional<int64_t>& blue) {
-  StaticJsonDocument<256> doc;
+  cJSON* root = cJSON_CreateObject();
+  if (!root) return "{}";
 
-  if (red.has_value()) {
-    doc["red"] = static_cast<uint8_t>(std::clamp(red.value(), 0LL, 255LL));
-  } else {
-    doc["red"] = nullptr;
-  }
+  uint8_t r_value = static_cast<uint8_t>(std::clamp(red.value_or(0), 0LL, 255LL));
+  cJSON_AddNumberToObject(root, "red", r_value);
 
-  if (green.has_value()) {
-    doc["green"] = static_cast<uint8_t>(std::clamp(green.value(), 0LL, 255LL));
-  } else {
-    doc["green"] = nullptr;
-  }
+  uint8_t g_value = static_cast<uint8_t>(std::clamp(green.value_or(0), 0LL, 255LL));
+  cJSON_AddNumberToObject(root, "green", g_value);
 
-  if (blue.has_value()) {
-    doc["blue"] = static_cast<uint8_t>(std::clamp(blue.value(), 0LL, 255LL));
-  } else {
-    doc["blue"] = nullptr;
-  }
+  uint8_t b_value = static_cast<uint8_t>(std::clamp(blue.value_or(0), 0LL, 255LL));
+  cJSON_AddNumberToObject(root, "blue", b_value);
 
-  std::string json_string;
-  serializeJson(doc, json_string);
-  return json_string;
+  char* json_str = cJSON_PrintUnformatted(root);
+  std::string result = json_str ? json_str : "{}";
+
+  if (json_str) free(json_str);
+  cJSON_Delete(root);
+
+  return result;
 }
 
 // Implementation of brightness control function
@@ -324,7 +326,7 @@ void PrintMemInfo() {
 void setup() {
   Serial.begin(115200);
 
-  Ws2812bInit();
+  InitWs2812b();
 
   InitDisplay();
   if (heap_caps_get_total_size(MALLOC_CAP_SPIRAM) == 0) {
@@ -481,16 +483,10 @@ void loop() {
 
             // Send operation instructions to WS2812B
             if (index.value() < kLedNum) {
-              char prop_name[8];
-              snprintf(prop_name, sizeof(prop_name), "color%lld", index.value() + 1);
+              std::string property_name = "color" + std::to_string(index.value_or(0) + 1);
               std::string color_str = ConvertRGBToJsonString(red, green, blue);
-              g_ws2812b_iot_entity->UpdateState(prop_name, color_str);
+              g_ws2812b_iot_entity->UpdateState(property_name, color_str);
               g_strip.setPixelColor(index.value(), g_strip.Color(red.value_or(0), green.value_or(0), blue.value_or(0)));
-              printf("Set LED %lld to color RGB(%lld, %lld, %lld)\n",
-                     index.value(),
-                     red.value_or(0),
-                     green.value_or(0),
-                     blue.value_or(0));
             }
             g_strip.show();
           }
