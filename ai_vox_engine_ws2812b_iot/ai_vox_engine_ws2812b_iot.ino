@@ -125,8 +125,7 @@ void InitDisplay() {
   esp_lcd_panel_swap_xy(panel, kDisplaySwapXY);
   esp_lcd_panel_mirror(panel, kDisplayMirrorX, kDisplayMirrorY);
 
-  g_display = std::make_unique<Display>(
-      panel_io, panel, kDisplayWidth, kDisplayHeight, 0, 0, kDisplayMirrorX, kDisplayMirrorY, kDisplaySwapXY);
+  g_display = std::make_unique<Display>(panel_io, panel, kDisplayWidth, kDisplayHeight, 0, 0, kDisplayMirrorX, kDisplayMirrorY, kDisplaySwapXY);
   g_display->Start();
 }
 
@@ -226,7 +225,7 @@ void InitWs2812b() {
   g_strip.show();              // Turn off all LEDs during initialization
 }
 
-std::string ConvertRGBToJsonString(const int64_t& red, const int64_t& green, const int64_t& blue) {
+std::string ConvertRGBToJsonString(const int64_t red, const int64_t green, const int64_t blue) {
   cJSON* root = cJSON_CreateObject();
   if (!root) {
     return "{}";
@@ -250,20 +249,18 @@ std::string ConvertRGBToJsonString(const int64_t& red, const int64_t& green, con
     cJSON_AddNumberToObject(root, "blue", 0);
   }
 
-  char* json_str = cJSON_PrintUnformatted(root);
-  std::string result = json_str ? json_str : "{}";
-
-  if (json_str) {
-    cJSON_free(json_str);
+  std::string result = cJSON_PrintUnformatted(root);
+  if (result.empty()) {
+    result = "{}";
   }
+
   cJSON_Delete(root);
 
   return result;
 }
 
 // Implementation of Region Filling Function - RGB version
-void FillRangeLed(
-    const uint16_t& start_index, const uint16_t& end_index, const uint8_t& red, const uint8_t& green, const uint8_t& blue) {
+void FillRangeLed(const uint16_t start_index, const uint16_t end_index, const uint8_t red, const uint8_t green, const uint8_t blue) {
   // Ensure that the starting and ending Indexs are within the valid range
   if (start_index >= kLedNum || end_index >= kLedNum || start_index > end_index) {
     return;
@@ -447,7 +444,6 @@ void loop() {
           std::optional<int64_t> red;
           std::optional<int64_t> green;
           std::optional<int64_t> blue;
-          bool valid = true;
 
           if (const auto it = iot_message_event->parameters.find("index"); it != iot_message_event->parameters.end()) {
             if (std::get_if<int64_t>(&it->second)) {
@@ -456,10 +452,10 @@ void loop() {
               // Parameter validation
               if (!index.has_value()) {
                 printf("Error: lamp number acquisition failed, please check.\n");
-                valid = false;
+                continue;
               } else if (*index < 0 || *index > kLedNum) {
-                printf("Error:lamp number  is out of range (0-%lld), got: %lld\n", kLedNum - 1, *index);
-                valid = false;
+                printf("Error:lamp number  is out of range (0-%d), got: %lld\n", kLedNum - 1, *index);
+                continue;
               }
             }
           }
@@ -471,10 +467,11 @@ void loop() {
               // red parameter validation
               if (!red.has_value()) {
                 printf("Error: Missing required parameter 'red'.\n");
-                valid = false;
+                continue;
+
               } else if (*red < 0 || *red > 255) {
                 printf("Error: 'red' out of range (0-255), got: %lld\n", *red);
-                valid = false;
+                continue;
               }
             }
           }
@@ -486,10 +483,11 @@ void loop() {
               // green parameter validation
               if (!green.has_value()) {
                 printf("Error: Missing required parameter 'green'.\n");
-                valid = false;
+                continue;
+
               } else if (*green < 0 || *green > 255) {
                 printf("Error: 'green' out of range (0-255), got: %lld\n", *green);
-                valid = false;
+                continue;
               }
             }
           }
@@ -501,32 +499,31 @@ void loop() {
               // blue parameter validation
               if (!blue.has_value()) {
                 printf("Error: Missing required parameter 'blue'.\n");
-                valid = false;
+                continue;
+
               } else if (*blue < 0 || *blue > 255) {
                 printf("Error: 'blue' out of range (0-255), got: %lld\n", *blue);
-                valid = false;
+                continue;
               }
             }
           }
 
-          if (valid) {
-            printf("Set LED %lld to color RGB(%lld, %lld, %lld)\n", *index, *red, *green, *blue);
+          printf("Set LED %lld to color RGB(%lld, %lld, %lld)\n", *index, *red, *green, *blue);
 
-            std::string property_name = "color" + std::to_string(*index + 1);
+          std::string property_name = "color" + std::to_string(*index + 1);
 
-            std::string color_str = ConvertRGBToJsonString(*red, *green, *blue);
-            g_ws2812b_iot_entity->UpdateState(property_name, color_str);
-            g_strip.setPixelColor(index.value_or(0), g_strip.Color(*red, *green, *blue));
+          std::string color_str = ConvertRGBToJsonString(*red, *green, *blue);
+          g_ws2812b_iot_entity->UpdateState(property_name, color_str);
+          g_strip.setPixelColor(index.value_or(0), g_strip.Color(*red, *green, *blue));
 
-            g_strip.show();
-          }
+          g_strip.show();
+
         } else if (iot_message_event->function == "SetRangeIndexsColor") {  // Set the color from one light to another
           std::optional<int64_t> start;
           std::optional<int64_t> end;
           std::optional<int64_t> red;
           std::optional<int64_t> green;
           std::optional<int64_t> blue;
-          bool valid = true;
 
           if (const auto it = iot_message_event->parameters.find("start"); it != iot_message_event->parameters.end()) {
             if (std::get_if<int64_t>(&it->second)) {
@@ -535,10 +532,10 @@ void loop() {
               // start arameter validation
               if (!start.has_value()) {
                 printf("Error: start lamp number acquisition failed, please check.\n");
-                valid = false;
+                continue;
               } else if (*start < 0 || *start > kLedNum) {
-                printf("Error: start lamp number is out of range (0-%lld), got: %lld\n", kLedNum - 1, *start);
-                valid = false;
+                printf("Error: start lamp number is out of range (0-%d), got: %lld\n", kLedNum - 1, *start);
+                continue;
               }
             }
           }
@@ -550,10 +547,10 @@ void loop() {
               // end parameter validation
               if (!end.has_value()) {
                 printf("Error: end lamp number acquisition failed, please check.\n");
-                valid = false;
+                continue;
               } else if (*end < 0 || *end > kLedNum) {
-                printf("Error: end lamp number is out of range (0-%lld), got: %lld\n", kLedNum - 1, *end);
-                valid = false;
+                printf("Error: end lamp number is out of range (0-%d), got: %lld\n", kLedNum - 1, *end);
+                continue;
               }
             }
           }
@@ -564,10 +561,10 @@ void loop() {
               // red parameter validation
               if (!red.has_value()) {
                 printf("Error: Missing required parameter 'red'.\n");
-                valid = false;
+                continue;
               } else if (*red < 0 || *red > 255) {
                 printf("Error: 'red' out of range (0-255), got: %lld\n", *red);
-                valid = false;
+                continue;
               }
             }
           }
@@ -578,10 +575,10 @@ void loop() {
               // green parameter validation
               if (!green.has_value()) {
                 printf("Error: Missing required parameter 'green'.\n");
-                valid = false;
+                continue;
               } else if (*green < 0 || *green > 255) {
                 printf("Error: 'green' out of range (0-255), got: %lld\n", *green);
-                valid = false;
+                continue;
               }
             }
           }
@@ -592,31 +589,31 @@ void loop() {
               // blue parameter validation
               if (!blue.has_value()) {
                 printf("Error: Missing required parameter 'blue'.\n");
-                valid = false;
+                continue;
               } else if (*blue < 0 || *blue > 255) {
                 printf("Error: 'blue' out of range (0-255), got: %lld\n", *blue);
-                valid = false;
+                continue;
               }
             }
           }
 
-          if (valid) {
-            // ensure   start <= end
-            if (*start > *end) {
-              start.swap(end);
-            }
-
-            printf("Set LEDs from %lld to %lld to color RGB(%lld, %lld, %lld)\n", *start, *end, *red, *green, *blue);
-
-            // Send operation instructions to WS2812B
-            FillRangeLed(*start, *end, *red, *green, *blue);
-            std::string color_str = ConvertRGBToJsonString(*red, *green, *blue);
-            for (uint32_t i = *start + 1; i <= *end + 1; ++i) {
-              std::string property_name = "color" + std::to_string(i);
-              g_ws2812b_iot_entity->UpdateState(property_name, color_str);
-            }
-            g_strip.show();
+          // ensure   start <= end
+          if (*start > *end) {
+            printf("Error:start number > end number,please check.\n");
+            continue;
           }
+
+          printf("Set LEDs from %lld to %lld to color RGB(%lld, %lld, %lld)\n", *start, *end, *red, *green, *blue);
+
+          // Send operation instructions to WS2812B
+          FillRangeLed(*start, *end, *red, *green, *blue);
+          std::string color_str = ConvertRGBToJsonString(*red, *green, *blue);
+          for (uint32_t i = *start + 1; i <= *end + 1; ++i) {
+            std::string property_name = "color" + std::to_string(i);
+            g_ws2812b_iot_entity->UpdateState(property_name, color_str);
+          }
+          g_strip.show();
+
         } else if (iot_message_event->function == "SetAllIndexsColor") {  // Unified setting of all lights
           std::optional<int64_t> red;
           std::optional<int64_t> green;
@@ -629,10 +626,10 @@ void loop() {
               // red parameter validation
               if (!red.has_value()) {
                 printf("Error: Missing required parameter 'red'.\n");
-                valid = false;
+                continue;
               } else if (*red < 0 || *red > 255) {
                 printf("Error: 'red' out of range (0-255), got: %lld\n", *red);
-                valid = false;
+                continue;
               }
             }
           }
@@ -643,10 +640,10 @@ void loop() {
               // green parameter validation
               if (!green.has_value()) {
                 printf("Error: Missing required parameter 'green'.\n");
-                valid = false;
+                continue;
               } else if (*green < 0 || *green > 255) {
                 printf("Error: 'green' out of range (0-255), got: %lld\n", *green);
-                valid = false;
+                continue;
               }
             }
           }
@@ -657,31 +654,29 @@ void loop() {
               // blue parameter validation
               if (!blue.has_value()) {
                 printf("Error: Missing required parameter 'blue'.\n");
-                valid = false;
+                continue;
               } else if (*blue < 0 || *blue > 255) {
                 printf("Error: 'blue' out of range (0-255), got: %lld\n", *blue);
-                valid = false;
+                continue;
               }
             }
           }
 
-          if (valid) {
-            printf("Set all LEDs to color RGB(%lld, %lld, %lld)\n", *red, *green, *blue);
+          printf("Set all LEDs to color RGB(%lld, %lld, %lld)\n", *red, *green, *blue);
 
-            // Send operation instructions to WS2812B
-            uint32_t color = g_strip.Color(*red, *green, *blue);
-            g_strip.fill(color);
-            std::string color_str = ConvertRGBToJsonString(*red, *green, *blue);
-            for (uint32_t i = 1; i <= kLedNum; ++i) {
-              std::string property_name = "color" + std::to_string(i);
-              g_ws2812b_iot_entity->UpdateState(property_name, color_str);
-            }
-            g_strip.show();
+          // Send operation instructions to WS2812B
+          uint32_t color = g_strip.Color(*red, *green, *blue);
+          g_strip.fill(color);
+          std::string color_str = ConvertRGBToJsonString(*red, *green, *blue);
+          for (uint32_t i = 1; i <= kLedNum; ++i) {
+            std::string property_name = "color" + std::to_string(i);
+            g_ws2812b_iot_entity->UpdateState(property_name, color_str);
           }
+          g_strip.show();
+
         } else if (iot_message_event->function == "SetBrightness") {  // Set Brightness
           if (const auto it = iot_message_event->parameters.find("brightness"); it != iot_message_event->parameters.end()) {
             std::optional<int64_t> brightness;
-            bool valid = true;
 
             if (std::get_if<int64_t>(&it->second)) {
               brightness = std::get<int64_t>(it->second);
@@ -689,24 +684,23 @@ void loop() {
               // brightness parameter validation
               if (!brightness.has_value()) {
                 printf("Error: Missing required parameter 'brightness'.\n");
-                valid = false;
+                continue;
               } else if (*brightness < 0 || *brightness > 255) {
                 printf("Error: 'brightness' out of range (0-255), got %lld\n", *brightness);
-                valid = false;
+                continue;
               }
             }
-            if (valid) {
-              printf("Set LED brightness: %lld\n", *brightness);
 
-              if (auto int_ptr = *brightness) {
-                g_strip.setBrightness(static_cast<uint8_t>(int_ptr));
-              } else {
-                g_strip.setBrightness(128);
-              }
-              g_strip.show();
+            printf("Set LED brightness: %lld\n", *brightness);
 
-              g_ws2812b_iot_entity->UpdateState("brightness", *brightness);
+            if (auto int_ptr = *brightness) {
+              g_strip.setBrightness(static_cast<uint8_t>(int_ptr));
+            } else {
+              g_strip.setBrightness(128);
             }
+            g_strip.show();
+
+            g_ws2812b_iot_entity->UpdateState("brightness", *brightness);
           }
         } else if (iot_message_event->function == "Clear") {  // Turn off all lights
           printf("Clear all LEDs\n");
