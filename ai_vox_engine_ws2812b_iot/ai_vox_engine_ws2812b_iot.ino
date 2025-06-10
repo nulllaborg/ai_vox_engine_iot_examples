@@ -149,10 +149,10 @@ void InitIot() {
   });
 
   for (uint32_t i = 1; i <= kLedNum; ++i) {
-    std::string property_name = "color" + std::to_string(i);
-    std::string property_describe = std::to_string(i) + "号灯颜色";
+    const std::string property_name = "color" + std::to_string(i);
+    const std::string property_describe = std::to_string(i) + "号灯颜色";
 
-    ws2812b_properties.push_back({property_name, property_describe, ai_vox::iot::ValueType::kString});
+    ws2812b_properties.push_back({std::move(property_name), std::move(property_describe), ai_vox::iot::ValueType::kString});
   }
 
   // 2.Define the functions for the WS2812B RGB LED ring entity
@@ -211,8 +211,8 @@ void InitIot() {
   g_ws2812b_iot_entity->UpdateState("LedNums", kLedNum);
 
   for (uint32_t i = 1; i <= kLedNum; ++i) {
-    std::string property_name = "color" + std::to_string(i);
-    g_ws2812b_iot_entity->UpdateState(property_name, R"({"red":0,"green":0,"blue":0})");
+    const std::string property_name = "color" + std::to_string(i);
+    g_ws2812b_iot_entity->UpdateState(std::move(property_name), R"({"red":0,"green":0,"blue":0})");
   }
 
   // 5.Register the WS2812B RGB LED ring entity with the AI Vox engine
@@ -249,8 +249,12 @@ std::string ConvertRGBToJsonString(const int64_t red, const int64_t green, const
     cJSON_AddNumberToObject(root, "blue", 0);
   }
 
-  std::string result = cJSON_PrintUnformatted(root);
-  if (result.empty()) {
+  const auto json_str = cJSON_PrintUnformatted(root);
+  std::string result;
+  if (json_str != nullptr) {
+    result = json_str;
+    cJSON_free(json_str);
+  } else {
     result = "{}";
   }
 
@@ -266,7 +270,7 @@ void FillRangeLed(const uint16_t start_index, const uint16_t end_index, const ui
     return;
   }
 
-  uint32_t color_value = g_strip.Color(red, green, blue);
+  const uint32_t color_value = g_strip.Color(red, green, blue);
 
   // Implementation of Region Filling Function
   for (uint16_t i = start_index; i <= end_index; i++) {
@@ -453,8 +457,8 @@ void loop() {
               if (!index.has_value()) {
                 printf("Error: lamp number acquisition failed, please check.\n");
                 continue;
-              } else if (*index < 0 || *index > kLedNum) {
-                printf("Error:lamp number  is out of range (0-%d), got: %lld\n", kLedNum - 1, *index);
+              } else if (*index < 0 || *index >= kLedNum) {
+                printf("Error: lamp number is out of range (0-%d), got: %lld\n", kLedNum - 1, *index);
                 continue;
               }
             }
@@ -510,11 +514,11 @@ void loop() {
 
           printf("Set LED %lld to color RGB(%lld, %lld, %lld)\n", *index, *red, *green, *blue);
 
-          std::string property_name = "color" + std::to_string(*index + 1);
+          const std::string property_name = "color" + std::to_string(*index + 1);
 
-          std::string color_str = ConvertRGBToJsonString(*red, *green, *blue);
-          g_ws2812b_iot_entity->UpdateState(property_name, color_str);
-          g_strip.setPixelColor(index.value_or(0), g_strip.Color(*red, *green, *blue));
+          const std::string color_str = ConvertRGBToJsonString(*red, *green, *blue);
+          g_ws2812b_iot_entity->UpdateState(std::move(property_name), std::move(color_str));
+          g_strip.setPixelColor(*index, g_strip.Color(*red, *green, *blue));
 
           g_strip.show();
 
@@ -533,7 +537,7 @@ void loop() {
               if (!start.has_value()) {
                 printf("Error: start lamp number acquisition failed, please check.\n");
                 continue;
-              } else if (*start < 0 || *start > kLedNum) {
+              } else if (*start < 0 || *start >= kLedNum) {
                 printf("Error: start lamp number is out of range (0-%d), got: %lld\n", kLedNum - 1, *start);
                 continue;
               }
@@ -548,7 +552,7 @@ void loop() {
               if (!end.has_value()) {
                 printf("Error: end lamp number acquisition failed, please check.\n");
                 continue;
-              } else if (*end < 0 || *end > kLedNum) {
+              } else if (*end < 0 || *end >= kLedNum) {
                 printf("Error: end lamp number is out of range (0-%d), got: %lld\n", kLedNum - 1, *end);
                 continue;
               }
@@ -599,7 +603,7 @@ void loop() {
 
           // ensure   start <= end
           if (*start > *end) {
-            printf("Error:start number > end number,please check.\n");
+            printf("Error: start number > end number,please check.\n");
             continue;
           }
 
@@ -607,10 +611,10 @@ void loop() {
 
           // Send operation instructions to WS2812B
           FillRangeLed(*start, *end, *red, *green, *blue);
-          std::string color_str = ConvertRGBToJsonString(*red, *green, *blue);
+          const std::string color_str = ConvertRGBToJsonString(*red, *green, *blue);
           for (uint32_t i = *start + 1; i <= *end + 1; ++i) {
-            std::string property_name = "color" + std::to_string(i);
-            g_ws2812b_iot_entity->UpdateState(property_name, color_str);
+            const std::string property_name = "color" + std::to_string(i);
+            g_ws2812b_iot_entity->UpdateState(std::move(property_name), std::move(color_str));
           }
           g_strip.show();
 
@@ -667,10 +671,10 @@ void loop() {
           // Send operation instructions to WS2812B
           uint32_t color = g_strip.Color(*red, *green, *blue);
           g_strip.fill(color);
-          std::string color_str = ConvertRGBToJsonString(*red, *green, *blue);
+          const std::string color_str = ConvertRGBToJsonString(*red, *green, *blue);
           for (uint32_t i = 1; i <= kLedNum; ++i) {
-            std::string property_name = "color" + std::to_string(i);
-            g_ws2812b_iot_entity->UpdateState(property_name, color_str);
+            const std::string property_name = "color" + std::to_string(i);
+            g_ws2812b_iot_entity->UpdateState(std::move(property_name), std::move(color_str));
           }
           g_strip.show();
 
@@ -692,14 +696,8 @@ void loop() {
             }
 
             printf("Set LED brightness: %lld\n", *brightness);
-
-            if (auto int_ptr = *brightness) {
-              g_strip.setBrightness(static_cast<uint8_t>(int_ptr));
-            } else {
-              g_strip.setBrightness(128);
-            }
+            g_strip.setBrightness(static_cast<uint8_t>(*brightness));
             g_strip.show();
-
             g_ws2812b_iot_entity->UpdateState("brightness", *brightness);
           }
         } else if (iot_message_event->function == "Clear") {  // Turn off all lights
