@@ -445,10 +445,10 @@ void loop() {
       if (iot_message_event->name == "WS2812B") {
         if (iot_message_event->function == "SetIndexColor") {  // Specify the color of a certain light
 
-          int64_t index;
-          int64_t red;
-          int64_t green;
-          int64_t blue;
+          int64_t index = 0;
+          int64_t red = 0;
+          int64_t green = 0;
+          int64_t blue = 0;
 
           if (const auto it = iot_message_event->parameters.find("index"); it != iot_message_event->parameters.end()) {
             if (std::get_if<int64_t>(&it->second)) {
@@ -529,11 +529,11 @@ void loop() {
           g_strip.show();
 
         } else if (iot_message_event->function == "SetRangeIndexsColor") {  // Set the color from one light to another
-          int64_t start;
-          int64_t end;
-          int64_t red;
-          int64_t green;
-          int64_t blue;
+          int64_t start = 0;
+          int64_t end = 0;
+          int64_t red = 0;
+          int64_t green = 0;
+          int64_t blue = 0;
 
           if (const auto it = iot_message_event->parameters.find("start"); it != iot_message_event->parameters.end()) {
             if (std::get_if<int64_t>(&it->second)) {
@@ -638,9 +638,9 @@ void loop() {
           g_strip.show();
 
         } else if (iot_message_event->function == "SetAllIndexsColor") {  // Unified setting of all lights
-          int64_t red;
-          int64_t green;
-          int64_t blue;
+          int64_t red = 0;
+          int64_t green = 0;
+          int64_t blue = 0;
 
           if (const auto it = iot_message_event->parameters.find("red"); it != iot_message_event->parameters.end()) {
             if (std::get_if<int64_t>(&it->second)) {
@@ -706,7 +706,7 @@ void loop() {
           g_strip.show();
 
         } else if (iot_message_event->function == "SetBrightness") {  // Set Brightness
-          int64_t brightness;
+          int64_t brightness = 0;
 
           if (const auto it = iot_message_event->parameters.find("brightness"); it != iot_message_event->parameters.end()) {
             if (std::get_if<int64_t>(&it->second)) {
