@@ -11,10 +11,6 @@
 #include "i2s_std_audio_input_device.h"
 #include "i2s_std_audio_output_device.h"
 
-#define DHTLIB_OK 0
-#define DHTLIB_ERROR_CHECKSUM -1
-#define DHTLIB_ERROR_TIMEOUT -2
-
 #ifndef WIFI_SSID
 #define WIFI_SSID "ssid"
 #endif
@@ -55,10 +51,12 @@ constexpr bool kDisplayMirrorY = true;
 
 constexpr uint32_t kSensorReadInterval = 2000;
 
-uint32_t us04_iot_measure_distance = 0;
-uint32_t dht11_iot_read_humidity;
-uint32_t dht11_iot_read_temperature;
-uint32_t photosensitive_iot_read_value = 0;
+// DHT11 Sensor Data Structure
+typedef struct {
+  uint32_t humidity;
+  uint32_t temperature;
+} dht11_iot_data;
+
 uint32_t g_last_sensor_read_time = 0;
 
 std::unique_ptr<Display> g_display;
@@ -140,8 +138,8 @@ void InitIot() {
   });
 
   // 2.Define the functions for the ultrasonic sensor entity
-  std::vector<ai_vox::iot::Function> us04_ultrasonic_sensor_iot_functions({{"MeasureDistance",  // function name
-                                                                            "距离测量",         // function description
+  std::vector<ai_vox::iot::Function> us04_ultrasonic_sensor_iot_functions({{"MeasureUs04UltrasonicIotDistance",  // function name
+                                                                            "距离测量",                          // function description
                                                                             {}}
 
   });
@@ -195,11 +193,12 @@ void InitIot() {
 }
 
 // DHT11 temperature and humidity sensor reading function
-void ReadTemperatureHumidity() {
+dht11_iot_data ReadDht11IotTemperatureHumidity() {
   // BUFFER TO RECEIVE
   uint8_t bits[5] = {0};
   uint8_t count = 7;
   uint8_t index = 0;
+  dht11_iot_data dht11_iot_read_data = {0, 0};
 
   // REQUEST SAMPLE
   pinMode(kDht11Pin, OUTPUT);
@@ -213,19 +212,19 @@ void ReadTemperatureHumidity() {
   unsigned int loop_count = 10000;
   while (digitalRead(kDht11Pin) == LOW)
     if (loop_count-- == 0) {
-      dht11_iot_read_humidity = -22;
-      dht11_iot_read_temperature = -22;
+      dht11_iot_read_data.humidity = -22;
+      dht11_iot_read_data.temperature = -22;
       printf("Error: DHT11 sensor measure timeout\n");
-      return;
+      return dht11_iot_read_data;
     }
 
   loop_count = 10000;
   while (digitalRead(kDht11Pin) == HIGH)
     if (loop_count-- == 0) {
-      dht11_iot_read_humidity = -22;
-      dht11_iot_read_temperature = -22;
+      dht11_iot_read_data.humidity = -22;
+      dht11_iot_read_data.temperature = -22;
       printf("Error: DHT11 sensor measure timeout\n");
-      return;
+      return dht11_iot_read_data;
     }
 
   // READ OUTPUT - 40 BITS => 5 BYTES or TIMEOUT
@@ -233,11 +232,10 @@ void ReadTemperatureHumidity() {
     loop_count = 10000;
     while (digitalRead(kDht11Pin) == LOW)
       if (loop_count-- == 0) {
-        dht11_iot_read_humidity = -22;
-        dht11_iot_read_temperature = -22;
+        dht11_iot_read_data.humidity = -22;
+        dht11_iot_read_data.temperature = -22;
         printf("Error: DHT11 sensor measure timeout\n");
-
-        return;
+        return dht11_iot_read_data;
       }
 
     unsigned long t = micros();
@@ -245,10 +243,10 @@ void ReadTemperatureHumidity() {
     loop_count = 10000;
     while (digitalRead(kDht11Pin) == HIGH)
       if (loop_count-- == 0) {
-        dht11_iot_read_humidity = -22;
-        dht11_iot_read_temperature = -22;
+        dht11_iot_read_data.humidity = -22;
+        dht11_iot_read_data.temperature = -22;
         printf("Error: DHT11 sensor measure timeout\n");
-        return;
+        return dht11_iot_read_data;
       }
 
     if ((micros() - t) > 40) bits[index] |= (1 << count);
@@ -260,8 +258,9 @@ void ReadTemperatureHumidity() {
       count--;
   }
 
-  dht11_iot_read_humidity = bits[0];
-  dht11_iot_read_temperature = bits[2];
+  dht11_iot_read_data.humidity = bits[0];
+  dht11_iot_read_data.temperature = bits[2];
+  return dht11_iot_read_data;
 }
 
 // Initialize the US04 ultrasonic module
@@ -271,7 +270,7 @@ void InitUs04() {
 }
 
 // US04 measurement function
-void MeasureDistance() {
+uint32_t MeasureUs04UltrasonicIotDistance() {
   // Send trigger signal
   digitalWrite(kUs04PinTrig, LOW);
   delayMicroseconds(2);
@@ -279,21 +278,20 @@ void MeasureDistance() {
   delayMicroseconds(10);
   digitalWrite(kUs04PinTrig, LOW);
 
-  const unsigned long timeout = 30000;  // 30毫秒超时（约5米）
+  const unsigned long timeout = 30000;  // 30 milliseconds timeout (approximately 5 meters)
 
-  // MeasureDistance echo time
+  // MeasureUs04UltrasonicIotDistance echo time
   const long duration = pulseIn(kUs04PinEcho, HIGH, timeout);
 
   if (duration <= 0) {
     printf("US04 sensor measure timeout\n");
 
-    us04_iot_measure_distance = -1;
-    return;
+    return -1;
   }
 
-  us04_iot_measure_distance = (int)duration * 0.034 / 2;
-  // printf("MeasureDistance:%d\n",(int)duration * 0.034 / 2);
-  // Calculate distance (in centimeters)
+  const uint32_t distance = (int)duration * 0.034 / 2;
+
+  return distance;
 }
 
 #ifdef PRINT_HEAP_INFO_INTERVAL
@@ -395,14 +393,15 @@ void loop() {
   const uint32_t current_time = millis();
   if (current_time - g_last_sensor_read_time >= kSensorReadInterval) {
     g_last_sensor_read_time = current_time;
-    ReadTemperatureHumidity();  // Initialize temperature and humidity pins
-    g_dht11_sensor_iot_entity->UpdateState("temperature", dht11_iot_read_temperature);
-    g_dht11_sensor_iot_entity->UpdateState("humidity", dht11_iot_read_humidity);
 
-    MeasureDistance();
+    const dht11_iot_data dht11_iot_read_data = ReadDht11IotTemperatureHumidity();
+    g_dht11_sensor_iot_entity->UpdateState("temperature", dht11_iot_read_data.temperature);
+    g_dht11_sensor_iot_entity->UpdateState("humidity", dht11_iot_read_data.humidity);
+
+    const uint32_t us04_iot_measure_distance = MeasureUs04UltrasonicIotDistance();
     g_us04_ultrasonic_sensor_iot_entity->UpdateState("distance", us04_iot_measure_distance);
 
-    photosensitive_iot_read_value = analogRead(kPhotosensitivePin);  // Read the photosensitive value
+    const uint32_t photosensitive_iot_read_value = analogRead(kPhotosensitivePin);  // Read the photosensitive value
     const std::string light_status = photosensitive_iot_read_value > 500 ? "白天" : "晚上";
     g_photosensitive_sensor_iot_entity->UpdateState("illuminance", photosensitive_iot_read_value);
     g_photosensitive_sensor_iot_entity->UpdateState("day_night", std::move(light_status));
@@ -479,28 +478,30 @@ void loop() {
 
       if (iot_message_event->name == "UltrasonicSensor") {
         // Trigger a distance measurement once
-        if (iot_message_event->function == "MeasureDistance") {
-          MeasureDistance();
+        if (iot_message_event->function == "MeasureUs04UltrasonicIotDistance") {
+          const uint32_t us04_iot_measure_distance = MeasureUs04UltrasonicIotDistance();
           g_us04_ultrasonic_sensor_iot_entity->UpdateState("distance", us04_iot_measure_distance);
-          printf("触发单次距离测量，结果：%d 厘米\n", us04_iot_measure_distance);
+          printf("Triggering a single distance measurement, result:%d centimeters\n", us04_iot_measure_distance);
         }
 
       } else if (iot_message_event->name == "DHT11Sensor") {
         if (iot_message_event->function == "ReadBoth") {
-          ReadTemperatureHumidity();
-          g_dht11_sensor_iot_entity->UpdateState("temperature", dht11_iot_read_temperature);
-          g_dht11_sensor_iot_entity->UpdateState("humidity", dht11_iot_read_humidity);
-          printf("读取温湿度：温度 %d ℃，湿度 %d %%\n", dht11_iot_read_temperature, dht11_iot_read_humidity);
+          const dht11_iot_data dht11_iot_read_data = ReadDht11IotTemperatureHumidity();
+          g_dht11_sensor_iot_entity->UpdateState("temperature", dht11_iot_read_data.temperature);
+          g_dht11_sensor_iot_entity->UpdateState("humidity", dht11_iot_read_data.humidity);
+          printf("Read temperature and humidity: temperature %d ℃, humidity %d %%\n", dht11_iot_read_data.temperature, dht11_iot_read_data.humidity);
         }
       } else if (iot_message_event->name == "PhotosensitiveSensor") {
         // Trigger a distance measurement once
         if (iot_message_event->function == "ReadIlluminance") {
-          photosensitive_iot_read_value = analogRead(kPhotosensitivePin);  // Read the photosensitive value
+          const uint32_t photosensitive_iot_read_value = analogRead(kPhotosensitivePin);  // Read the photosensitive value
           const std::string light_status = photosensitive_iot_read_value > 500 ? "白天" : "晚上";
           g_photosensitive_sensor_iot_entity->UpdateState("illuminance", photosensitive_iot_read_value);
           g_photosensitive_sensor_iot_entity->UpdateState("day_night", std::move(light_status));
 
-          printf("触发光敏值测量，结果：%d,判断是白天/晚上：%s \n", photosensitive_iot_read_value, light_status.c_str());
+          printf("Triggering photosensitive value measurement, result:%d, judged as day/night: %s \n",
+                 photosensitive_iot_read_value,
+                 light_status.c_str());
         }
       }
     }
