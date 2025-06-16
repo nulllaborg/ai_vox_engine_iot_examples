@@ -13,11 +13,11 @@
 #include "i2s_std_audio_output_device.h"
 
 #ifndef WIFI_SSID
-#define WIFI_SSID "ssid"
+#define WIFI_SSID "emakefun"
 #endif
 
 #ifndef WIFI_PASSWORD
-#define WIFI_PASSWORD "password"
+#define WIFI_PASSWORD "501416wf"
 #endif
 
 namespace {
@@ -61,7 +61,7 @@ std::shared_ptr<ai_vox::iot::Entity> g_dht11_sensor_iot_entity;
 std::shared_ptr<ai_vox::iot::Entity> g_us04_ultrasonic_sensor_iot_entity;
 std::shared_ptr<ai_vox::iot::Entity> g_photosensitive_sensor_iot_entity;
 
-DHT g_dht11_iot(kDht11Pin, DHT11);
+DHT g_dht11(kDht11Pin, DHT11);
 
 auto g_audio_output_device = std::make_shared<ai_vox::I2sStdAudioOutputDevice>(kSpeakerPinBclk, kSpeakerPinWs, kSpeakerPinDout);
 
@@ -135,9 +135,7 @@ void InitIot() {
   });
 
   // 2.Define the functions for the ultrasonic sensor entity
-  std::vector<ai_vox::iot::Function> us04_ultrasonic_sensor_iot_functions({{"MeasureUs04UltrasonicIotDistance",  // function name
-                                                                            "距离测量",                          // function description
-                                                                            {}}
+  std::vector<ai_vox::iot::Function> us04_ultrasonic_sensor_iot_functions({
 
   });
 
@@ -155,18 +153,18 @@ void InitIot() {
 
   // 1.Define the properties for the g_dht11_iot_controller sensor entity
   std::vector<ai_vox::iot::Property> dht11_sensor_properties(
-      {{"temperature", "当前温度", ai_vox::iot::ValueType::kNumber}, {"humidity", "当前湿度", ai_vox::iot::ValueType::kNumber}});
+      {{"temperature", "当前温度", ai_vox::iot::ValueType::kString}, {"humidity", "当前湿度", ai_vox::iot::ValueType::kString}});
 
   // 2.Define the functions for the g_dht11_iot_controller sensor entity
-  std::vector<ai_vox::iot::Function> dht11_sensor_functions({{"ReadBoth", "测量温湿度", {}}});
+  std::vector<ai_vox::iot::Function> dht11_sensor_functions({});
 
   // 3.Create the g_dht11_iot_controller sensor entity
   g_dht11_sensor_iot_entity = std::make_shared<ai_vox::iot::Entity>(
       "DHT11Sensor", "DHT11温湿度传感器", std::move(dht11_sensor_properties), std::move(dht11_sensor_functions));
 
   // 4.Initialize the g_dht11_iot_controller sensor entity with default values
-  g_dht11_sensor_iot_entity->UpdateState("temperature", 0);
-  g_dht11_sensor_iot_entity->UpdateState("humidity", 0);
+  g_dht11_sensor_iot_entity->UpdateState("temperature", "0");
+  g_dht11_sensor_iot_entity->UpdateState("humidity", "0");
 
   // 5.Register the g_dht11_iot_controller sensor entity with the AI Vox engine
   ai_vox_engine.RegisterIotEntity(g_dht11_sensor_iot_entity);
@@ -176,7 +174,7 @@ void InitIot() {
       {{"illuminance", "当前光敏值", ai_vox::iot::ValueType::kNumber}, {"day_night", "当前昼夜状态(白天/夜晚)", ai_vox::iot::ValueType::kString}});
 
   // 2. Define the function of photosensitive sensors
-  std::vector<ai_vox::iot::Function> photosensitive_sensor_iot_functions({{"ReadIlluminance", "光敏测量", {}}});
+  std::vector<ai_vox::iot::Function> photosensitive_sensor_iot_functions({});
 
   // 3. Create a photosensitive sensor entity
   g_photosensitive_sensor_iot_entity = std::make_shared<ai_vox::iot::Entity>(
@@ -196,7 +194,7 @@ void InitUs04() {
 }
 
 // US04 measurement function
-uint32_t MeasureUs04UltrasonicIotDistance() {
+uint32_t MeasureUs04UltrasonicDistance() {
   // Send trigger signal
   digitalWrite(kUs04PinTrig, LOW);
   delayMicroseconds(2);
@@ -206,7 +204,7 @@ uint32_t MeasureUs04UltrasonicIotDistance() {
 
   const int32_t timeout = 30000;  // 30 milliseconds timeout (approximately 5 meters)
 
-  // MeasureUs04UltrasonicIotDistance echo time
+  // MeasureUs04UltrasonicDistance echo time
   const long duration = pulseIn(kUs04PinEcho, HIGH, timeout);
 
   if (duration <= 0) {
@@ -268,7 +266,7 @@ void setup() {
   Serial.begin(115200);
   printf("Init\n");
 
-  g_dht11_iot.begin();
+  g_dht11.begin();
 
   pinMode(kPhotosensitivePin, INPUT);
 
@@ -322,19 +320,14 @@ void loop() {
   if (current_time - g_last_sensor_read_time >= kSensorReadInterval) {
     g_last_sensor_read_time = current_time;
 
-    const uint32_t us04_iot_measure_distance = MeasureUs04UltrasonicIotDistance();
-    g_us04_ultrasonic_sensor_iot_entity->UpdateState("distance", us04_iot_measure_distance);
+    g_us04_ultrasonic_sensor_iot_entity->UpdateState("distance", MeasureUs04UltrasonicDistance());
 
-    const uint32_t photosensitive_iot_read_value = analogRead(kPhotosensitivePin);  // Read the photosensitive value
-    const std::string light_status = photosensitive_iot_read_value > 500 ? "白天" : "晚上";
-    g_photosensitive_sensor_iot_entity->UpdateState("illuminance", photosensitive_iot_read_value);
-    g_photosensitive_sensor_iot_entity->UpdateState("day_night", std::move(light_status));
+    g_photosensitive_sensor_iot_entity->UpdateState("illuminance", analogRead(kPhotosensitivePin));
+    g_photosensitive_sensor_iot_entity->UpdateState("day_night", analogRead(kPhotosensitivePin) > 500 ? "白天" : "晚上");
 
-    const uint32_t dht11_iot_read_humidity = g_dht11_iot.readHumidity();
-    const uint32_t dht11_iot_read_temperature = g_dht11_iot.readTemperature();
+    g_dht11_sensor_iot_entity->UpdateState("temperature", std::to_string(g_dht11.readTemperature()));
 
-    g_dht11_sensor_iot_entity->UpdateState("temperature", dht11_iot_read_temperature);
-    g_dht11_sensor_iot_entity->UpdateState("humidity", dht11_iot_read_humidity);
+    g_dht11_sensor_iot_entity->UpdateState("humidity", std::to_string(g_dht11.readHumidity()));
   }
 
   const auto events = g_observer->PopEvents();
@@ -403,37 +396,6 @@ void loop() {
           printf("key: %s, value: %s\n", key.c_str(), std::get<std::string>(value).c_str());
         } else if (std::get_if<int64_t>(&value)) {
           printf("key: %s, value: %lld\n", key.c_str(), std::get<int64_t>(value));
-        }
-      }
-
-      if (iot_message_event->name == "UltrasonicSensor") {
-        // Trigger a distance measurement once
-        if (iot_message_event->function == "MeasureUs04UltrasonicIotDistance") {
-          const uint32_t us04_iot_measure_distance = MeasureUs04UltrasonicIotDistance();
-          g_us04_ultrasonic_sensor_iot_entity->UpdateState("distance", us04_iot_measure_distance);
-          printf("Triggering a single distance measurement, result:%d centimeters\n", us04_iot_measure_distance);
-        }
-
-      } else if (iot_message_event->name == "DHT11Sensor") {
-        if (iot_message_event->function == "ReadBoth") {
-          const uint32_t dht11_iot_read_humidity = g_dht11_iot.readHumidity();
-          const uint32_t dht11_iot_read_temperature = g_dht11_iot.readTemperature();
-
-          g_dht11_sensor_iot_entity->UpdateState("temperature", dht11_iot_read_temperature);
-          g_dht11_sensor_iot_entity->UpdateState("humidity", dht11_iot_read_humidity);
-          printf("Read temperature and humidity: temperature %d ℃, humidity %d %%\n", dht11_iot_read_temperature, dht11_iot_read_humidity);
-        }
-      } else if (iot_message_event->name == "PhotosensitiveSensor") {
-        // Trigger a distance measurement once
-        if (iot_message_event->function == "ReadIlluminance") {
-          const uint32_t photosensitive_iot_read_value = analogRead(kPhotosensitivePin);  // Read the photosensitive value
-          const std::string light_status = photosensitive_iot_read_value > 500 ? "白天" : "晚上";
-          g_photosensitive_sensor_iot_entity->UpdateState("illuminance", photosensitive_iot_read_value);
-          g_photosensitive_sensor_iot_entity->UpdateState("day_night", std::move(light_status));
-
-          printf("Triggering photosensitive value measurement, result:%d, judged as day/night: %s \n",
-                 photosensitive_iot_read_value,
-                 light_status.c_str());
         }
       }
     }
