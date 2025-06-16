@@ -61,7 +61,7 @@ std::shared_ptr<ai_vox::iot::Entity> g_dht11_sensor_iot_entity;
 std::shared_ptr<ai_vox::iot::Entity> g_us04_ultrasonic_sensor_iot_entity;
 std::shared_ptr<ai_vox::iot::Entity> g_photosensitive_sensor_iot_entity;
 
-DHT dht(kDht11Pin, DHT11);
+DHT g_dht11_iot(kDht11Pin, DHT11);
 
 auto g_audio_output_device = std::make_shared<ai_vox::I2sStdAudioOutputDevice>(kSpeakerPinBclk, kSpeakerPinWs, kSpeakerPinDout);
 
@@ -268,7 +268,7 @@ void setup() {
   Serial.begin(115200);
   printf("Init\n");
 
-  dht.begin();
+  g_dht11_iot.begin();
 
   pinMode(kPhotosensitivePin, INPUT);
 
@@ -330,8 +330,8 @@ void loop() {
     g_photosensitive_sensor_iot_entity->UpdateState("illuminance", photosensitive_iot_read_value);
     g_photosensitive_sensor_iot_entity->UpdateState("day_night", std::move(light_status));
 
-    const uint32_t dht11_iot_read_humidity = dht.readHumidity();
-    const uint32_t dht11_iot_read_temperature = dht.readTemperature();
+    const uint32_t dht11_iot_read_humidity = g_dht11_iot.readHumidity();
+    const uint32_t dht11_iot_read_temperature = g_dht11_iot.readTemperature();
 
     g_dht11_sensor_iot_entity->UpdateState("temperature", dht11_iot_read_temperature);
     g_dht11_sensor_iot_entity->UpdateState("humidity", dht11_iot_read_humidity);
@@ -416,8 +416,8 @@ void loop() {
 
       } else if (iot_message_event->name == "DHT11Sensor") {
         if (iot_message_event->function == "ReadBoth") {
-          const uint32_t dht11_iot_read_humidity = dht.readHumidity();
-          const uint32_t dht11_iot_read_temperature = dht.readTemperature();
+          const uint32_t dht11_iot_read_humidity = g_dht11_iot.readHumidity();
+          const uint32_t dht11_iot_read_temperature = g_dht11_iot.readTemperature();
 
           g_dht11_sensor_iot_entity->UpdateState("temperature", dht11_iot_read_temperature);
           g_dht11_sensor_iot_entity->UpdateState("humidity", dht11_iot_read_humidity);
