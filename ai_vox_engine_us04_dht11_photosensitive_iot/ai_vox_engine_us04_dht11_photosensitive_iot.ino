@@ -13,11 +13,11 @@
 #include "i2s_std_audio_output_device.h"
 
 #ifndef WIFI_SSID
-#define WIFI_SSID "emakefun"
+#define WIFI_SSID "ssid"
 #endif
 
 #ifndef WIFI_PASSWORD
-#define WIFI_PASSWORD "501416wf"
+#define WIFI_PASSWORD "password"
 #endif
 
 namespace {
@@ -135,9 +135,7 @@ void InitIot() {
   });
 
   // 2.Define the functions for the ultrasonic sensor entity
-  std::vector<ai_vox::iot::Function> us04_ultrasonic_sensor_iot_functions({
-
-  });
+  std::vector<ai_vox::iot::Function> us04_ultrasonic_sensor_iot_functions({});
 
   // 3.Create the ultrasonic sensor entity
   g_us04_ultrasonic_sensor_iot_entity = std::make_shared<ai_vox::iot::Entity>("UltrasonicSensor",                                // name
