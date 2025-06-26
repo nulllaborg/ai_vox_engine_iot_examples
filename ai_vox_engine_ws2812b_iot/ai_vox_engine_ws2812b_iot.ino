@@ -22,11 +22,11 @@
 #endif
 
 #ifndef WIFI_SSID
-#define WIFI_SSID "emakefun"
+#define WIFI_SSID "ssid"
 #endif
 
 #ifndef WIFI_PASSWORD
-#define WIFI_PASSWORD "501416wf"
+#define WIFI_PASSWORD "password"
 #endif
 
 namespace {
