@@ -65,6 +65,7 @@ constexpr bool kDisplaySwapXY = false;
 constexpr auto kDisplayRgbElementOrder = LCD_RGB_ELEMENT_ORDER_RGB;
 
 constexpr uint32_t kLedNum = 12;  // Led nums
+
 CRGB g_leds[kLedNum];
 
 std::shared_ptr<ai_vox::iot::Entity> g_ws2812b_iot_entity;
