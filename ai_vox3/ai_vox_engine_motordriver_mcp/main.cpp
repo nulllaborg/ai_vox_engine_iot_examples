@@ -65,6 +65,9 @@ constexpr gpio_num_t kI2cSda = GPIO_NUM_13;  // ES8311 CDATA
 
 constexpr i2c_port_t kI2CPort = I2C_NUM_1;
 
+constexpr gpio_num_t kMd40I2cScl = GPIO_NUM_6;
+constexpr gpio_num_t kMd40I2cSda = GPIO_NUM_5;
+
 constexpr auto kDisplaySpiMode = 0;
 constexpr uint32_t kDisplayWidth = 240;
 constexpr uint32_t kDisplayHeight = 240;
@@ -95,8 +98,6 @@ constexpr uint8_t kCommandType = 0x11;
 constexpr uint8_t kRunPwmDuty = 12;
 
 uint8_t g_display_brightness = 255;
-
-TwoWire g_motor_wire = TwoWire(2);
 
 void InitI2cBus() {
   const i2c_master_bus_config_t i2c_master_bus_config = {
@@ -504,21 +505,21 @@ void InitMcpTools() {
 bool WaitCommandEmpty() {
   uint8_t status = 0xFF;
   do {
-    g_motor_wire.beginTransmission(kMd40Address);
-    g_motor_wire.write(kCommandExecute);
-    if (g_motor_wire.endTransmission() != kI2cEndTransmissionSuccess) {
+    Wire.beginTransmission(kMd40Address);
+    Wire.write(kCommandExecute);
+    if (Wire.endTransmission() != kI2cEndTransmissionSuccess) {
       printf("Error: I2C transmission error.\n");
       return false;
     }
 
-    if (g_motor_wire.requestFrom(kMd40Address, static_cast<uint8_t>(sizeof(status))) != sizeof(status)) {
+    if (Wire.requestFrom(kMd40Address, static_cast<uint8_t>(sizeof(status))) != sizeof(status)) {
       printf("Error: I2C request error.\n");
       return false;
     }
 
-    while (g_motor_wire.available() == 0);
+    while (Wire.available() == 0);
 
-    status = g_motor_wire.read();
+    status = Wire.read();
 
   } while (status != 0);
 
@@ -526,10 +527,10 @@ bool WaitCommandEmpty() {
 }
 
 bool ExecuteCommand() {
-  g_motor_wire.beginTransmission(kMd40Address);
-  g_motor_wire.write(kCommandExecute);
-  g_motor_wire.write(0x01);
-  if (g_motor_wire.endTransmission() != kI2cEndTransmissionSuccess) {
+  Wire.beginTransmission(kMd40Address);
+  Wire.write(kCommandExecute);
+  Wire.write(0x01);
+  if (Wire.endTransmission() != kI2cEndTransmissionSuccess) {
     printf("Error: I2C transmission error.\n");
     return false;
   }
@@ -553,12 +554,12 @@ bool SetMotorDirectionSpeed(const uint8_t motor_index, const bool direction, con
     return false;
   }
 
-  g_motor_wire.beginTransmission(kMd40Address);
-  g_motor_wire.write(kCommandType);
-  g_motor_wire.write(kRunPwmDuty);
-  g_motor_wire.write(static_cast<uint8_t>(motor_index - 1));
-  g_motor_wire.write(reinterpret_cast<const uint8_t*>(&pwm_duty), sizeof(pwm_duty));
-  if (g_motor_wire.endTransmission() != kI2cEndTransmissionSuccess) {
+  Wire.beginTransmission(kMd40Address);
+  Wire.write(kCommandType);
+  Wire.write(kRunPwmDuty);
+  Wire.write(static_cast<uint8_t>(motor_index - 1));
+  Wire.write(reinterpret_cast<const uint8_t*>(&pwm_duty), sizeof(pwm_duty));
+  if (Wire.endTransmission() != kI2cEndTransmissionSuccess) {
     printf("Error: I2C transmission error.\n");
     return false;
   }
@@ -569,7 +570,7 @@ bool SetMotorDirectionSpeed(const uint8_t motor_index, const bool direction, con
 void InitMotors() {
   printf("init motors\n");
 
-  g_motor_wire.begin(kI2cSda, kI2cScl);
+  Wire.begin(kMd40I2cSda, kMd40I2cScl);
 
   for (uint8_t i = 0; i < kMotorNum; i++) {
     if (!WaitCommandEmpty()) {
@@ -577,11 +578,11 @@ void InitMotors() {
       return;
     }
 
-    g_motor_wire.beginTransmission(kMd40Address);
-    g_motor_wire.write(kCommandType);
-    g_motor_wire.write(2);
-    g_motor_wire.write(i);
-    if (g_motor_wire.endTransmission() != kI2cEndTransmissionSuccess) {
+    Wire.beginTransmission(kMd40Address);
+    Wire.write(kCommandType);
+    Wire.write(2);
+    Wire.write(i);
+    if (Wire.endTransmission() != kI2cEndTransmissionSuccess) {
       printf("Error: I2C transmission error.\n");
       return;
     }
@@ -591,14 +592,14 @@ void InitMotors() {
       return;
     }
 
-    g_motor_wire.beginTransmission(kMd40Address);
-    g_motor_wire.write(kCommandType);
-    g_motor_wire.write(1);
-    g_motor_wire.write(i);
-    g_motor_wire.write(0);
-    g_motor_wire.write(0);
-    g_motor_wire.write(0);
-    if (g_motor_wire.endTransmission() != kI2cEndTransmissionSuccess) {
+    Wire.beginTransmission(kMd40Address);
+    Wire.write(kCommandType);
+    Wire.write(1);
+    Wire.write(i);
+    Wire.write(0);
+    Wire.write(0);
+    Wire.write(0);
+    if (Wire.endTransmission() != kI2cEndTransmissionSuccess) {
       printf("Error: I2C transmission error.\n");
       return;
     }
@@ -625,31 +626,31 @@ int16_t GetMotorSpeed(const uint8_t motor_index) {
 
   const uint8_t address = kPwmDutyBase + (motor_index - 1) * kMotorStateOffset;
 
-  g_motor_wire.beginTransmission(kMd40Address);
-  g_motor_wire.write(address);
-  g_motor_wire.write(0);
-  if (g_motor_wire.endTransmission() != kI2cEndTransmissionSuccess) {
+  Wire.beginTransmission(kMd40Address);
+  Wire.write(address);
+  Wire.write(0);
+  if (Wire.endTransmission() != kI2cEndTransmissionSuccess) {
     printf("Error: I2C transmission error.\n");
     return 0;
   }
 
-  g_motor_wire.beginTransmission(kMd40Address);
-  g_motor_wire.write(address);
-  if (g_motor_wire.endTransmission() != kI2cEndTransmissionSuccess) {
+  Wire.beginTransmission(kMd40Address);
+  Wire.write(address);
+  if (Wire.endTransmission() != kI2cEndTransmissionSuccess) {
     printf("Error: I2C transmission error.\n");
     return 0;
   }
 
   int16_t data = 0;
-  if (g_motor_wire.requestFrom(kMd40Address, static_cast<uint8_t>(sizeof(data))) != sizeof(data)) {
+  if (Wire.requestFrom(kMd40Address, static_cast<uint8_t>(sizeof(data))) != sizeof(data)) {
     printf("Error: I2C request error during reading PWM duty.\n");
     return 0;
   }
 
   uint8_t offset = 0;
   while (offset < sizeof(data)) {
-    if (g_motor_wire.available()) {
-      reinterpret_cast<uint8_t*>(&data)[offset++] = g_motor_wire.read();
+    if (Wire.available()) {
+      reinterpret_cast<uint8_t*>(&data)[offset++] = Wire.read();
     }
   }
 
